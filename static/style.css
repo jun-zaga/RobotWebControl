@@ -1,0 +1,85 @@
+body {
+  font-family: system-ui, Arial, sans-serif;
+  margin: 16px;
+  background: #0b0f14;
+  color: #e8eef6;
+}
+
+h1 { margin: 0 0 12px; }
+
+.card {
+  background: #121a24;
+  border: 1px solid #223246;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+label { display: block; margin: 10px 0; }
+
+#pad {
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: #0f1620;
+  border: 2px solid #2a3f5a;
+  position: relative;
+  touch-action: none;
+}
+
+#knob {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #e8eef6;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.row { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+button {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #2a3f5a;
+  background: #182433;
+  color: #e8eef6;
+}
+
+button:active { transform: translateY(1px); }
+
+#stopBtn { background: #3a1220; border-color: #7a2a40; font-weight: 700; }
+
+
+#joystick {
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: #0f1620;
+  border: 2px solid #2a3f5a;
+  position: relative;
+  touch-action: none; /* critical for mobile */
+  user-select: none;
+}
+
+#joystick-knob {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #e8eef6;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.crosshair {
+  position: absolute;
+  background: rgba(232, 238, 246, 0.15);
+}
+
+.crosshair.v { width: 2px; height: 100%; left: 50%; top: 0; transform: translateX(-50%); }
+.crosshair.h { height: 2px; width: 100%; top: 50%; left: 0; transform: translateY(-50%); }
