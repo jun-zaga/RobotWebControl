@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robot Control</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="header">
+      <h1>Robot Control</h1>
+      <div class="sub">Joystick + Head/Waist + Arms (6 joints each)</div>
+    </header>
+
+    <section class="card">
+      <h2>Drive</h2>
+      <div id="joystick" class="joystick">
+        <div id="joystick-knob" class="knob"></div>
+      </div>
+      <div class="row">
+        <button id="stopBtn" class="danger">STOP</button>
+        <div id="driveReadout" class="mono">L=0.00 R=0.00</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Head + Waist</h2>
+      <div class="grid2">
+        <div class="sliderRow">
+          <label>Pan <span id="panVal" class="mono">0.50</span></label>
+          <input id="pan" type="range" min="0" max="1" step="0.01" value="0.50" />
+        </div>
+        <div class="sliderRow">
+          <label>Tilt <span id="tiltVal" class="mono">0.50</span></label>
+          <input id="tilt" type="range" min="0" max="1" step="0.01" value="0.50" />
+        </div>
+        <div class="sliderRow">
+          <label>Waist <span id="waistVal" class="mono">0.50</span></label>
+          <input id="waist" type="range" min="0" max="1" step="0.01" value="0.50" />
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Arms + Hands</h2>
+      <div class="grid2">
+        <div>
+          <h3>Left (ch 5–10)</h3>
+          <div class="sliderRow"><label>Joint 1 (Shoulder) <span id="lJ1Val" class="mono">0.50</span></label><input id="lJ1" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 2 <span id="lJ2Val" class="mono">0.50</span></label><input id="lJ2" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 3 <span id="lJ3Val" class="mono">0.50</span></label><input id="lJ3" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 4 <span id="lJ4Val" class="mono">0.50</span></label><input id="lJ4" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 5 <span id="lJ5Val" class="mono">0.50</span></label><input id="lJ5" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 6 (Hand) <span id="lJ6Val" class="mono">0.50</span></label><input id="lJ6" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+        </div>
+
+        <div>
+          <h3>Right (ch 11–16)</h3>
+          <div class="sliderRow"><label>Joint 1 (Shoulder) <span id="rJ1Val" class="mono">0.50</span></label><input id="rJ1" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 2 <span id="rJ2Val" class="mono">0.50</span></label><input id="rJ2" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 3 <span id="rJ3Val" class="mono">0.50</span></label><input id="rJ3" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 4 <span id="rJ4Val" class="mono">0.50</span></label><input id="rJ4" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 5 <span id="rJ5Val" class="mono">0.50</span></label><input id="rJ5" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+          <div class="sliderRow"><label>Joint 6 (Hand) <span id="rJ6Val" class="mono">0.50</span></label><input id="rJ6" type="range" min="0" max="1" step="0.01" value="0.50" /></div>
+        </div>
+      </div>
+
+      <div class="row wrapButtons">
+        <button id="armsNeutralBtn">Arms Neutral</button>
+        <button id="raiseLeftBtn">Raise Left</button>
+        <button id="raiseRightBtn">Raise Right</button>
+        <button id="handsOpenBtn">Hands Open</button>
+        <button id="handsCloseBtn">Hands Close</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Dialog</h2>
+      <div class="row">
+        <input id="dialogInput" class="textInput" placeholder="type here (simulated speech)..." />
+        <button id="dialogSendBtn">Send</button>
+        <button id="runScriptBtn">Run Script</button>
+      </div>
+      <div id="dialogOut" class="mono log"></div>
+    </section>
+  </div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+# definitions
+~greet: [hello hello hi hey]
+~robotname: [Stuart]
+
+u: (~greet) : [Hello Hi Hey] I am ~robotname <head_yes>
+u: (my name is _) : Nice to meet you $name <head_yes>
+u: (what is my name) : Your name is $name
+u: (what is your name) : My name is ~robotname
+u: (dance) : Watch this <dance90>
+u: (raise your arm) : Sure thing <arm_raise>
+u: (say yes) : Yes indeed <head_yes>
+u: (say no) : Nope <head_no>
+
+u: (let's chat) : Okay, what do you want to talk about?
+u1: (robots) : Robots are fun. Do you want movement or talking?
+u2: (movement) : I can drive, dance, and move my head. Do you want driving, dancing, or head movement?
+u3: (driving) : I can drive forward, backward, left, and right. Do you want slow or fast driving?
+u4: (slow) : Slow driving is safer indoors. Do you want careful or playful driving?
+u5: (careful) : Careful driving keeps me from bumping into things. Do you want to keep chatting or stop?
+u6: (keep chatting) : Okay, let's keep chatting.
+
+u5: (playful) : Playful driving is more energetic. Do you want to keep chatting or stop?
+u6: (stop) : Okay, goodbye.
+
+u4: (fast) : Fast driving is exciting. Do you want spinning or straight driving?
+u5: (spinning) : Spinning is fun. Do you want one spin or two?
+u6: (one spin) : Okay, one spin.
+u6: (two spin) : Okay, two spins.
+
+u5: (straight driving) : Straight driving is simple and steady. Do you want to keep chatting or stop?
+u6: (keep chatting) : Sounds good, let's keep chatting.
+u6: (stop) : Goodbye.
+
+u3: (dancing) : I can do a little dance. Do you want happy dancing or silly dancing?
+u4: (happy dancing) : Happy dancing is upbeat. Do you want a short dance or long dance?
+u5: (short dance) : Okay, short dance. Do you want more movement or talking?
+u6: (more movement) : Alright, let's keep talking about movement.
+u6: (talking) : Okay, let's talk instead.
