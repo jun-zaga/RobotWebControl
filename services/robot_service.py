@@ -26,7 +26,8 @@ class RobotService:
 
         print(
             f"[DRIVE] req=({l:.2f},{r:.2f}) safe=({safe_l:.2f},{safe_r:.2f}) "
-            f"mode={safety.get('mode')} front={safety.get('front_min_mm')} rear={safety.get('rear_min_mm')}",
+            f"mode={safety.get('mode')} front={safety.get('front_min_mm')} "
+            f"rear={safety.get('rear_min_mm')} stale={safety.get('stale')}",
             flush=True,
         )
 

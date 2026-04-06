@@ -20,15 +20,28 @@ except Exception as e:
 
 
 class LidarService:
+    BLOCK_HOLD_SEC = 0.8
+    BLOCK_CONFIRM_SCANS = 2
+
     def __init__(self):
         self._lidar = None
         self._lock = threading.Lock()
+
         self._front_min_mm = None
         self._rear_min_mm = None
         self._any_min_mm = None
         self._last_ts = 0.0
         self._status = "disabled"
         self._started = False
+
+        self._front_blocked_until = 0.0
+        self._rear_blocked_until = 0.0
+
+        self._front_block_count = 0
+        self._rear_block_count = 0
+
+        self._last_close_front_mm = None
+        self._last_close_rear_mm = None
 
     def log(self, msg):
         print(f"[LIDAR] {time.strftime('%H:%M:%S')} | {msg}", flush=True)
@@ -44,13 +57,20 @@ class LidarService:
 
     def get_status(self):
         with self._lock:
+            now = time.time()
             return {
                 "ok": True,
                 "status": self._status,
                 "front_min_mm": self._front_min_mm,
                 "rear_min_mm": self._rear_min_mm,
                 "any_min_mm": self._any_min_mm,
-                "last_scan_age_sec": (time.time() - self._last_ts) if self._last_ts else None,
+                "last_scan_age_sec": (now - self._last_ts) if self._last_ts else None,
+                "front_blocked_now": now < self._front_blocked_until,
+                "rear_blocked_now": now < self._rear_blocked_until,
+                "front_blocked_for_sec": max(0.0, self._front_blocked_until - now),
+                "rear_blocked_for_sec": max(0.0, self._rear_blocked_until - now),
+                "last_close_front_mm": self._last_close_front_mm,
+                "last_close_rear_mm": self._last_close_rear_mm,
                 "port": LIDAR_PORT,
                 "baud": LIDAR_BAUD,
                 "front_center_deg": LIDAR_FRONT_CENTER_DEG,
@@ -58,6 +78,8 @@ class LidarService:
                 "zone_half_angle_deg": LIDAR_ZONE_HALF_ANGLE_DEG,
                 "front_stop_mm": LIDAR_FRONT_STOP_MM,
                 "rear_stop_mm": LIDAR_REAR_STOP_MM,
+                "block_hold_sec": self.BLOCK_HOLD_SEC,
+                "block_confirm_scans": self.BLOCK_CONFIRM_SCANS,
             }
 
     def apply_safety(self, left, right):
@@ -66,6 +88,10 @@ class LidarService:
             rear_min = self._rear_min_mm
             last_ts = self._last_ts
             status = self._status
+            front_blocked_until = self._front_blocked_until
+            rear_blocked_until = self._rear_blocked_until
+            last_close_front_mm = self._last_close_front_mm
+            last_close_rear_mm = self._last_close_rear_mm
 
         now = time.time()
         stale = (now - last_ts) > LIDAR_STALE_SEC if last_ts else True
@@ -76,24 +102,39 @@ class LidarService:
             "front_min_mm": front_min,
             "rear_min_mm": rear_min,
             "stale": stale,
+            "front_blocked_now": now < front_blocked_until,
+            "rear_blocked_now": now < rear_blocked_until,
+            "last_close_front_mm": last_close_front_mm,
+            "last_close_rear_mm": last_close_rear_mm,
         }
 
         safe_left = float(left)
         safe_right = float(right)
 
-        forward_req = left > 0 or right > 0
-        reverse_req = left < 0 or right < 0
+        # Your robot appears to drive forward with NEGATIVE wheel values.
+        forward_req = left < 0 or right < 0
+        reverse_req = left > 0 or right > 0
 
-        if stale:
-            safety["mode"] = "stale"
-            return safe_left, safe_right, safety
+        if forward_req and now < front_blocked_until:
+            safety["mode"] = "blocked_front_sticky"
+            return 0.0, 0.0, safety
 
-        # FRONT SAFETY: stop if object is within about 1 foot in front
+        if LIDAR_REAR_STOP_MM > 0 and reverse_req and now < rear_blocked_until:
+            safety["mode"] = "blocked_rear_sticky"
+            return 0.0, 0.0, safety
+
+        if stale and forward_req:
+            safety["mode"] = "stale_forward_stop"
+            return 0.0, 0.0, safety
+
+        if stale and LIDAR_REAR_STOP_MM > 0 and reverse_req:
+            safety["mode"] = "stale_rear_stop"
+            return 0.0, 0.0, safety
+
         if forward_req and front_min is not None and front_min <= LIDAR_FRONT_STOP_MM:
             safety["mode"] = "blocked_front"
             return 0.0, 0.0, safety
 
-        # REAR SAFETY: disabled by default to ignore fixed post behind robot
         if (
             LIDAR_REAR_STOP_MM > 0
             and reverse_req
@@ -179,16 +220,39 @@ class LidarService:
                         self._last_ts = now
                         self._status = "running"
 
+                        if front_min is not None and front_min <= LIDAR_FRONT_STOP_MM:
+                            self._front_block_count += 1
+                            self._last_close_front_mm = front_min
+                            if self._front_block_count >= self.BLOCK_CONFIRM_SCANS:
+                                self._front_blocked_until = now + self.BLOCK_HOLD_SEC
+                        else:
+                            self._front_block_count = 0
+
+                        if (
+                            LIDAR_REAR_STOP_MM > 0
+                            and rear_min is not None
+                            and rear_min <= LIDAR_REAR_STOP_MM
+                        ):
+                            self._rear_block_count += 1
+                            self._last_close_rear_mm = rear_min
+                            if self._rear_block_count >= self.BLOCK_CONFIRM_SCANS:
+                                self._rear_blocked_until = now + self.BLOCK_HOLD_SEC
+                        else:
+                            self._rear_block_count = 0
+
                     if scan_count <= 5 or (now - last_summary_ts) >= 1.0:
                         self.log(
                             f"scan #{scan_count}: valid_points={valid_points} "
-                            f"any_min={any_min} front_min={front_min} rear_min={rear_min}"
+                            f"any_min={any_min} front_min={front_min} rear_min={rear_min} "
+                            f"front_block_count={self._front_block_count} "
+                            f"rear_block_count={self._rear_block_count}"
                         )
                         last_summary_ts = now
 
             except Exception as e:
                 self.log(f"ERROR: {repr(e)}")
 
+                now = time.time()
                 with self._lock:
                     self._status = f"error: {e}"
                     self._front_min_mm = None
@@ -196,6 +260,19 @@ class LidarService:
                     self._any_min_mm = None
                     self._last_ts = 0.0
                     self._lidar = None
+
+                    if self._last_close_front_mm is not None and self._last_close_front_mm <= LIDAR_FRONT_STOP_MM:
+                        self._front_blocked_until = max(self._front_blocked_until, now + self.BLOCK_HOLD_SEC)
+
+                    if (
+                        LIDAR_REAR_STOP_MM > 0
+                        and self._last_close_rear_mm is not None
+                        and self._last_close_rear_mm <= LIDAR_REAR_STOP_MM
+                    ):
+                        self._rear_blocked_until = max(self._rear_blocked_until, now + self.BLOCK_HOLD_SEC)
+
+                    self._front_block_count = 0
+                    self._rear_block_count = 0
 
                 try:
                     if lidar is not None:
