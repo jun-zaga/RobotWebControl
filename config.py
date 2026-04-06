@@ -17,10 +17,10 @@ LIDAR_FRONT_CENTER_DEG = 270.0
 LIDAR_REAR_CENTER_DEG = (LIDAR_FRONT_CENTER_DEG + 180.0) % 360.0
 
 # Wider cone for testing/calibration so detection actually happens.
-LIDAR_ZONE_HALF_ANGLE_DEG = 90.0
+LIDAR_ZONE_HALF_ANGLE_DEG = 120.0
 
 # 1 foot ~= 304.8 mm
-LIDAR_FRONT_STOP_MM = 305
+LIDAR_FRONT_STOP_MM = 915
 LIDAR_REAR_STOP_MM = 0
 
 # If lidar data goes stale while driving forward, stop.
