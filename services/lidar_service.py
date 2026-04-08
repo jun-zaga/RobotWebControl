@@ -6,7 +6,8 @@ from config import (
     LIDAR_BAUD,
     LIDAR_FRONT_CENTER_DEG,
     LIDAR_REAR_CENTER_DEG,
-    LIDAR_ZONE_HALF_ANGLE_DEG,
+    LIDAR_FRONT_ZONE_HALF_ANGLE_DEG,
+    LIDAR_REAR_ZONE_HALF_ANGLE_DEG,
     LIDAR_FRONT_STOP_MM,
     LIDAR_REAR_STOP_MM,
     LIDAR_STALE_SEC,
@@ -75,7 +76,8 @@ class LidarService:
                 "baud": LIDAR_BAUD,
                 "front_center_deg": LIDAR_FRONT_CENTER_DEG,
                 "rear_center_deg": LIDAR_REAR_CENTER_DEG,
-                "zone_half_angle_deg": LIDAR_ZONE_HALF_ANGLE_DEG,
+                "front_zone_half_angle_deg": LIDAR_FRONT_ZONE_HALF_ANGLE_DEG,
+                "rear_zone_half_angle_deg": LIDAR_REAR_ZONE_HALF_ANGLE_DEG,
                 "front_stop_mm": LIDAR_FRONT_STOP_MM,
                 "rear_stop_mm": LIDAR_REAR_STOP_MM,
                 "block_hold_sec": self.BLOCK_HOLD_SEC,
@@ -111,7 +113,6 @@ class LidarService:
         safe_left = float(left)
         safe_right = float(right)
 
-        # Your robot appears to drive forward with NEGATIVE wheel values.
         forward_req = left < 0 or right < 0
         reverse_req = left > 0 or right > 0
 
@@ -203,11 +204,11 @@ class LidarService:
                         if any_min is None or distance < any_min:
                             any_min = distance
 
-                        if abs(self.angle_diff_deg(angle, LIDAR_FRONT_CENTER_DEG)) <= LIDAR_ZONE_HALF_ANGLE_DEG:
+                        if abs(self.angle_diff_deg(angle, LIDAR_FRONT_CENTER_DEG)) <= LIDAR_FRONT_ZONE_HALF_ANGLE_DEG:
                             if front_min is None or distance < front_min:
                                 front_min = distance
 
-                        if abs(self.angle_diff_deg(angle, LIDAR_REAR_CENTER_DEG)) <= LIDAR_ZONE_HALF_ANGLE_DEG:
+                        if abs(self.angle_diff_deg(angle, LIDAR_REAR_CENTER_DEG)) <= LIDAR_REAR_ZONE_HALF_ANGLE_DEG:
                             if rear_min is None or distance < rear_min:
                                 rear_min = distance
 
