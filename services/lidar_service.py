@@ -43,6 +43,7 @@ class LidarService:
 
         self._last_close_front_mm = None
         self._last_close_rear_mm = None
+        self._last_scan_points = []
 
     def log(self, msg):
         print(f"[LIDAR] {time.strftime('%H:%M:%S')} | {msg}", flush=True)
@@ -55,6 +56,24 @@ class LidarService:
             return
         self._started = True
         threading.Thread(target=self._lidar_loop, daemon=True).start()
+
+    def get_zone_min(self, center_deg, half_angle_deg, max_distance_mm=None):
+        with self._lock:
+            points = list(self._last_scan_points)
+            last_ts = self._last_ts
+
+        if not last_ts:
+            return None
+
+        best = None
+        for angle, distance in points:
+            if abs(self.angle_diff_deg(angle, center_deg)) > half_angle_deg:
+                continue
+            if max_distance_mm is not None and distance > max_distance_mm:
+                continue
+            if best is None or distance < best:
+                best = distance
+        return best
 
     def get_status(self):
         with self._lock:
@@ -72,6 +91,7 @@ class LidarService:
                 "rear_blocked_for_sec": max(0.0, self._rear_blocked_until - now),
                 "last_close_front_mm": self._last_close_front_mm,
                 "last_close_rear_mm": self._last_close_rear_mm,
+                "scan_points": len(self._last_scan_points),
                 "port": LIDAR_PORT,
                 "baud": LIDAR_BAUD,
                 "front_center_deg": LIDAR_FRONT_CENTER_DEG,
@@ -194,12 +214,14 @@ class LidarService:
                     rear_min = None
                     any_min = None
                     valid_points = 0
+                    scan_points = []
 
                     for quality, angle, distance in scan:
                         if distance is None or distance <= 0:
                             continue
 
                         valid_points += 1
+                        scan_points.append((float(angle), float(distance)))
 
                         if any_min is None or distance < any_min:
                             any_min = distance
@@ -220,6 +242,7 @@ class LidarService:
                         self._any_min_mm = any_min
                         self._last_ts = now
                         self._status = "running"
+                        self._last_scan_points = scan_points
 
                         if front_min is not None and front_min <= LIDAR_FRONT_STOP_MM:
                             self._front_block_count += 1
@@ -261,6 +284,7 @@ class LidarService:
                     self._any_min_mm = None
                     self._last_ts = 0.0
                     self._lidar = None
+                    self._last_scan_points = []
 
                     if self._last_close_front_mm is not None and self._last_close_front_mm <= LIDAR_FRONT_STOP_MM:
                         self._front_blocked_until = max(self._front_blocked_until, now + self.BLOCK_HOLD_SEC)

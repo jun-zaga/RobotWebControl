@@ -6,8 +6,13 @@ def create_robot_blueprint():
 
     @bp.post("/api/drive")
     def api_drive():
-        robot = current_app.config["services"]["robot"]
+        services = current_app.config["services"]
+        robot = services["robot"]
+        wall = services.get("wall_follow")
         data = request.get_json(silent=True) or {}
+
+        if wall is not None and wall.is_enabled():
+            wall.disable(stop_robot=False, reason="manual drive override")
 
         try:
             return jsonify(robot.drive(data.get("left"), data.get("right")))
@@ -21,6 +26,10 @@ def create_robot_blueprint():
         runner = services["runner"]
         tts = services["tts"]
         dialog = services["dialog"]
+        wall = services.get("wall_follow")
+
+        if wall is not None:
+            wall.disable(stop_robot=False, reason="manual stop")
 
         robot.stop()
         runner.interrupt_all()
@@ -81,6 +90,50 @@ def create_robot_blueprint():
 
         try:
             return jsonify(robot.pose(name))
+        except ValueError as e:
+            return jsonify(ok=False, error=str(e)), 400
+
+    @bp.get("/api/wall_follow")
+    def api_wall_follow_status():
+        wall = current_app.config["services"].get("wall_follow")
+        if wall is None:
+            return jsonify(ok=False, error="wall_follow service missing"), 500
+        return jsonify(wall.get_status())
+
+    @bp.post("/api/wall_follow/start")
+    def api_wall_follow_start():
+        wall = current_app.config["services"].get("wall_follow")
+        if wall is None:
+            return jsonify(ok=False, error="wall_follow service missing"), 500
+
+        data = request.get_json(silent=True) or {}
+        try:
+            return jsonify(
+                wall.enable(
+                    side=data.get("side"),
+                    target_mm=data.get("target_mm"),
+                    tolerance_mm=data.get("tolerance_mm"),
+                )
+            )
+        except ValueError as e:
+            return jsonify(ok=False, error=str(e)), 400
+
+    @bp.post("/api/wall_follow/stop")
+    def api_wall_follow_stop():
+        wall = current_app.config["services"].get("wall_follow")
+        if wall is None:
+            return jsonify(ok=False, error="wall_follow service missing"), 500
+        return jsonify(wall.disable(stop_robot=True, reason="api stop"))
+
+    @bp.post("/api/wall_follow/config")
+    def api_wall_follow_config():
+        wall = current_app.config["services"].get("wall_follow")
+        if wall is None:
+            return jsonify(ok=False, error="wall_follow service missing"), 500
+
+        data = request.get_json(silent=True) or {}
+        try:
+            return jsonify(wall.set_params(data))
         except ValueError as e:
             return jsonify(ok=False, error=str(e)), 400
 

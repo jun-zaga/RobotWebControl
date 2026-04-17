@@ -11,6 +11,7 @@ from services.lidar_service import LidarService
 from services.robot_service import RobotService
 from services.safety_service import SafetyService
 from services.tts_service import TTSService
+from services.wall_follow_service import WallFollowService
 
 from routes.robot_routes import create_robot_blueprint
 from routes.dialog_routes import create_dialog_blueprint
@@ -28,6 +29,7 @@ def create_app():
     tts = TTSService()
     lidar = LidarService()
     robot = RobotService(rc=rc, lidar_service=lidar, safety_service=safety)
+    wall_follow = WallFollowService(robot_service=robot, lidar_service=lidar)
 
     def on_action_state_change(name: str):
         print(f"[STATE] -> {name}", flush=True)
@@ -55,6 +57,7 @@ def create_app():
         "lidar": lidar,
         "safety": safety,
         "runner": runner,
+        "wall_follow": wall_follow,
     }
 
     app.register_blueprint(create_robot_blueprint())
@@ -64,6 +67,7 @@ def create_app():
 
     safety.start()
     lidar.start()
+    wall_follow.start()
 
     return app
 

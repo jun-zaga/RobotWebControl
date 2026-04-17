@@ -1,4 +1,5 @@
 import { $, setText, clamp, postJSON } from "./api.js";
+import { stopWallFollowSilent } from "./wall_follow.js";
 
 export function initDrive() {
   const joy = $("joystick");
@@ -10,41 +11,40 @@ export function initDrive() {
 
   let dragging = false;
   let activePointerId = null;
+  let wallFollowCancelledForThisDrag = false;
 
-  const KNOB_RADIUS_PX = 40;
   const DEADZONE = 0.05;
 
-  function sendDrive(l, r) {
-    postJSON("/api/drive", { left: l, right: r });
+  async function sendDrive(l, r) {
+    await postJSON("/api/drive", { left: l, right: r });
     setText(readout, `L=${l.toFixed(2)} R=${r.toFixed(2)}`);
   }
 
-function setKnob(nx, ny) {
-  const maxX = (joy.clientWidth - knob.clientWidth) / 2;
-  const maxY = (joy.clientHeight - knob.clientHeight) / 2;
-
-  knob.style.transform =
-    `translate(calc(-50% + ${nx * maxX}px), calc(-50% + ${ny * maxY}px))`;
-}
-
-  function endDrag() {
-    dragging = false;
-    activePointerId = null;
-    setKnob(0, 0);
-    sendDrive(0, 0);
+  function setKnob(nx, ny) {
+    const maxX = (joy.clientWidth - knob.clientWidth) / 2;
+    const maxY = (joy.clientHeight - knob.clientHeight) / 2;
+    knob.style.transform = `translate(calc(-50% + ${nx * maxX}px), calc(-50% + ${ny * maxY}px))`;
   }
 
-function computeLR(nx, ny) {
-  let fwd = ny;   // flipped: UP and DOWN reversed
-  let turn = nx;  // RIGHT = turn right
+  async function endDrag() {
+    dragging = false;
+    activePointerId = null;
+    wallFollowCancelledForThisDrag = false;
+    setKnob(0, 0);
+    await sendDrive(0, 0);
+  }
 
-  if (Math.abs(fwd) < DEADZONE) fwd = 0;
-  if (Math.abs(turn) < DEADZONE) turn = 0;
+  function computeLR(nx, ny) {
+    let fwd = ny;
+    let turn = nx;
 
-  const l = clamp(fwd + turn, -1, 1);
-  const r = clamp(fwd - turn, -1, 1);
-  return [l, r];
-}
+    if (Math.abs(fwd) < DEADZONE) fwd = 0;
+    if (Math.abs(turn) < DEADZONE) turn = 0;
+
+    const l = clamp(fwd + turn, -1, 1);
+    const r = clamp(fwd - turn, -1, 1);
+    return [l, r];
+  }
 
   function onPointerDown(e) {
     e.preventDefault();
@@ -54,7 +54,7 @@ function computeLR(nx, ny) {
     onPointerMove(e);
   }
 
-  function onPointerMove(e) {
+  async function onPointerMove(e) {
     if (!dragging) return;
     if (activePointerId !== null && e.pointerId !== activePointerId) return;
 
@@ -68,8 +68,14 @@ function computeLR(nx, ny) {
     let ny = clamp((y - cy) / cy, -1, 1);
 
     setKnob(nx, ny);
+
+    if (!wallFollowCancelledForThisDrag && (Math.abs(nx) > DEADZONE || Math.abs(ny) > DEADZONE)) {
+      wallFollowCancelledForThisDrag = true;
+      await stopWallFollowSilent();
+    }
+
     const [l, r] = computeLR(nx, ny);
-    sendDrive(l, r);
+    await sendDrive(l, r);
   }
 
   function onPointerUp(e) {
@@ -88,7 +94,8 @@ function computeLR(nx, ny) {
 
   if (stopBtn) {
     stopBtn.addEventListener("click", async () => {
-      endDrag();
+      await endDrag();
+      await stopWallFollowSilent();
       await postJSON("/api/stop", {});
     });
   }
