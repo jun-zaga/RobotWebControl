@@ -11,11 +11,22 @@ def create_robot_blueprint():
         wall = services.get("wall_follow")
         data = request.get_json(silent=True) or {}
 
-        if wall is not None and wall.is_enabled():
+        left = data.get("left")
+        right = data.get("right")
+
+        is_manual_motion = False
+        try:
+            l = float(left)
+            r = float(right)
+            is_manual_motion = abs(l) > 0.02 or abs(r) > 0.02
+        except Exception:
+            pass
+
+        if wall is not None and wall.is_enabled() and is_manual_motion:
             wall.disable(stop_robot=False, reason="manual drive override")
 
         try:
-            return jsonify(robot.drive(data.get("left"), data.get("right")))
+            return jsonify(robot.drive(left, right))
         except ValueError as e:
             return jsonify(ok=False, error=str(e)), 400
 
@@ -108,6 +119,7 @@ def create_robot_blueprint():
 
         data = request.get_json(silent=True) or {}
         try:
+            wall.set_params(data)
             return jsonify(
                 wall.enable(
                     side=data.get("side"),

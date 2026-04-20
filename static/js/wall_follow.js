@@ -1,4 +1,4 @@
-import { $, setText, postJSON } from "./api.js";
+import { $, setText, postJSON, getJSON, debugLog } from "./api.js";
 
 function num(id) {
   const el = $(id);
@@ -89,14 +89,14 @@ function renderStatus(data) {
 
 async function fetchStatus() {
   try {
-    const res = await fetch("/api/wall_follow");
-    const data = await res.json();
+    const data = await getJSON("/api/wall_follow");
     renderStatus(data);
     return data;
   } catch (err) {
     setStatus(false, "error");
     const telem = $("wfTelemetry");
     if (telem) telem.textContent = "wall follow status unavailable";
+    debugLog("[wall_follow]", `status fetch failed: ${err}`);
     console.error(err);
     return null;
   }
@@ -127,20 +127,25 @@ export function initWallFollow() {
 
   if (startBtn) {
     startBtn.addEventListener("click", async () => {
-      const data = await postJSON("/api/wall_follow/start", currentPayload());
+      const payload = currentPayload();
+      debugLog("[wall_follow]", { action: "start_click", payload });
+      const data = await postJSON("/api/wall_follow/start", payload);
       renderStatus(data);
     });
   }
 
   if (applyBtn) {
     applyBtn.addEventListener("click", async () => {
-      const data = await postJSON("/api/wall_follow/config", currentPayload());
+      const payload = currentPayload();
+      debugLog("[wall_follow]", { action: "apply_click", payload });
+      const data = await postJSON("/api/wall_follow/config", payload);
       renderStatus(data);
     });
   }
 
   if (stopBtn) {
     stopBtn.addEventListener("click", async () => {
+      debugLog("[wall_follow]", { action: "stop_click" });
       const data = await postJSON("/api/wall_follow/stop", {});
       renderStatus(data);
     });

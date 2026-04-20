@@ -12,6 +12,7 @@ from config import (
     WALL_FOLLOW_SEARCH_TURN,
     WALL_FOLLOW_LOOP_HZ,
     WALL_FOLLOW_WALL_LOST_MM,
+    WALL_FOLLOW_LIDAR_LEFT_OFFSET_MM,
     WALL_FOLLOW_FRONT_CENTER_DEG,
     WALL_FOLLOW_FRONT_HALF_ANGLE_DEG,
     WALL_FOLLOW_RIGHT_CENTER_DEG,
@@ -49,6 +50,7 @@ class WallFollowService:
         self._search_turn = float(WALL_FOLLOW_SEARCH_TURN)
         self._wall_lost_mm = float(WALL_FOLLOW_WALL_LOST_MM)
         self._loop_hz = float(WALL_FOLLOW_LOOP_HZ)
+        self._lidar_left_offset_mm = float(WALL_FOLLOW_LIDAR_LEFT_OFFSET_MM)
 
         self._last_cmd = {"left": 0.0, "right": 0.0}
         self._last_state = "idle"
@@ -88,7 +90,7 @@ class WallFollowService:
             if tolerance_mm is not None:
                 if not self._is_number(tolerance_mm):
                     raise ValueError("tolerance_mm must be a number")
-                self._tolerance_mm = max(10.0, float(tolerance_mm))
+                self._tolerance_mm = max(0.0, float(tolerance_mm))
 
             self._enabled = True
             self._last_state = "starting"
@@ -132,17 +134,22 @@ class WallFollowService:
                 "search_turn",
                 "wall_lost_mm",
                 "loop_hz",
+                "lidar_left_offset_mm",
             ):
                 if key not in data or data[key] is None:
                     continue
                 if not self._is_number(data[key]):
                     raise ValueError(f"{key} must be a number")
-                setattr(self, f"_{key}", float(data[key]))
+                value = float(data[key])
+                if key == "tolerance_mm":
+                    value = max(0.0, value)
+                setattr(self, f"_{key}", value)
 
         return self.get_status()
 
     def get_status(self):
         with self._lock:
+            z = dict(self._last_zone_snapshot)
             return {
                 "ok": True,
                 "enabled": self._enabled,
@@ -156,11 +163,31 @@ class WallFollowService:
                 "search_turn": self._search_turn,
                 "wall_lost_mm": self._wall_lost_mm,
                 "loop_hz": self._loop_hz,
+                "lidar_left_offset_mm": self._lidar_left_offset_mm,
                 "state": self._last_state,
                 "reason": self._last_reason,
                 "last_error_mm": self._last_error_mm,
                 "last_cmd": dict(self._last_cmd),
-                "last_zone_snapshot": dict(self._last_zone_snapshot),
+                "last_zone_snapshot": z,
+                "front_mm": z.get("front_mm"),
+                "side_mm": z.get("side_mm"),
+                "front_side_mm": z.get("front_side_mm"),
+                "back_side_mm": z.get("back_side_mm"),
+                "scan_age_sec": z.get("scan_age_sec"),
+                "config": {
+                    "side": self._side,
+                    "target_mm": self._target_mm,
+                    "tolerance_mm": self._tolerance_mm,
+                    "front_stop_mm": self._front_stop_mm,
+                    "base_speed": self._base_speed,
+                    "turn_gain": self._turn_gain,
+                    "max_turn": self._max_turn,
+                    "search_turn": self._search_turn,
+                    "wall_lost_mm": self._wall_lost_mm,
+                    "loop_hz": self._loop_hz,
+                    "lidar_left_offset_mm": self._lidar_left_offset_mm,
+                    "front_arc_center_deg": WALL_FOLLOW_FRONT_CENTER_DEG,
+                },
                 "last_update_ts": self._last_update_ts,
             }
 
@@ -179,36 +206,53 @@ class WallFollowService:
 
             time.sleep(1.0 / loop_hz)
 
+    def _apply_side_offset(self, raw_mm, side):
+        if raw_mm is None:
+            return None
+
+        d = max(0.0, float(self._lidar_left_offset_mm))
+        if side == "left":
+            return raw_mm + d
+        return max(0.0, raw_mm - d)
+
     def _get_zone_snapshot(self, side):
         front = self.lidar.get_zone_min(WALL_FOLLOW_FRONT_CENTER_DEG, WALL_FOLLOW_FRONT_HALF_ANGLE_DEG)
 
         if side == "right":
-            side_mm = self.lidar.get_zone_min(WALL_FOLLOW_RIGHT_CENTER_DEG, WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG)
-            front_side_mm = self.lidar.get_zone_min(
+            side_raw = self.lidar.get_zone_min(WALL_FOLLOW_RIGHT_CENTER_DEG, WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG)
+            front_side_raw = self.lidar.get_zone_min(
                 WALL_FOLLOW_FRONT_RIGHT_CENTER_DEG,
                 WALL_FOLLOW_FRONT_RIGHT_HALF_ANGLE_DEG,
             )
-            back_side_mm = self.lidar.get_zone_min(
+            back_side_raw = self.lidar.get_zone_min(
                 WALL_FOLLOW_BACK_RIGHT_CENTER_DEG,
                 WALL_FOLLOW_BACK_RIGHT_HALF_ANGLE_DEG,
             )
         else:
-            side_mm = self.lidar.get_zone_min(WALL_FOLLOW_LEFT_CENTER_DEG, WALL_FOLLOW_LEFT_HALF_ANGLE_DEG)
-            front_side_mm = self.lidar.get_zone_min(
+            side_raw = self.lidar.get_zone_min(WALL_FOLLOW_LEFT_CENTER_DEG, WALL_FOLLOW_LEFT_HALF_ANGLE_DEG)
+            front_side_raw = self.lidar.get_zone_min(
                 WALL_FOLLOW_FRONT_LEFT_CENTER_DEG,
                 WALL_FOLLOW_FRONT_LEFT_HALF_ANGLE_DEG,
             )
-            back_side_mm = self.lidar.get_zone_min(
+            back_side_raw = self.lidar.get_zone_min(
                 WALL_FOLLOW_BACK_LEFT_CENTER_DEG,
                 WALL_FOLLOW_BACK_LEFT_HALF_ANGLE_DEG,
             )
 
+        side_mm = self._apply_side_offset(side_raw, side)
+        front_side_mm = self._apply_side_offset(front_side_raw, side)
+        back_side_mm = self._apply_side_offset(back_side_raw, side)
+
         return {
             "front_mm": front,
+            "side_raw_mm": side_raw,
+            "front_side_raw_mm": front_side_raw,
+            "back_side_raw_mm": back_side_raw,
             "side_mm": side_mm,
             "front_side_mm": front_side_mm,
             "back_side_mm": back_side_mm,
             "scan_age_sec": self.lidar.get_status().get("last_scan_age_sec"),
+            "lidar_left_offset_mm": self._lidar_left_offset_mm,
         }
 
     def _step(self):
@@ -270,9 +314,9 @@ class WallFollowService:
                     turn_mag = self.clamp(abs(norm_error) * turn_gain, 0.0, max_turn)
 
                     if side == "right":
-                        turn = -turn_mag if error_mm > 0 else +turn_mag
-                    else:
                         turn = +turn_mag if error_mm > 0 else -turn_mag
+                    else:
+                        turn = -turn_mag if error_mm > 0 else +turn_mag
 
                     state = "correct"
                     reason = f"wall error {error_mm:.1f} mm"
@@ -292,8 +336,8 @@ class WallFollowService:
             self._last_update_ts = time.time()
 
         print(
-            f"[WALL] state={state} side={side} front={front_mm} side_mm={side_mm} "
-            f"front_side={front_side_mm} back_side={back_side_mm} "
+            f"[WALL] state={state} side={side} front={front_mm} side_raw={z['side_raw_mm']} "
+            f"side_adj={side_mm} front_side_adj={front_side_mm} back_side_adj={back_side_mm} "
             f"err={error_mm} cmd=({actual_l:.2f},{actual_r:.2f}) safety={safety_mode}",
             flush=True,
         )
