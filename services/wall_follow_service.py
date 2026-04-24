@@ -15,6 +15,7 @@ from config import (
     WALL_FOLLOW_LEFT_BODY_OFFSET_MM,
     WALL_FOLLOW_RIGHT_BODY_OFFSET_MM,
     WALL_FOLLOW_FORWARD_SIGN,
+    WALL_FOLLOW_TURN_SIGN,
     WALL_FOLLOW_MIN_MOTOR_POWER,
     WALL_FOLLOW_FRONT_CENTER_DEG,
     WALL_FOLLOW_FRONT_HALF_ANGLE_DEG,
@@ -56,6 +57,7 @@ class WallFollowService:
         self._left_body_offset_mm = float(WALL_FOLLOW_LEFT_BODY_OFFSET_MM)
         self._right_body_offset_mm = float(WALL_FOLLOW_RIGHT_BODY_OFFSET_MM)
         self._forward_sign = 1.0 if float(WALL_FOLLOW_FORWARD_SIGN) >= 0 else -1.0
+        self._turn_sign = 1.0 if float(WALL_FOLLOW_TURN_SIGN) >= 0 else -1.0
         self._min_motor_power = max(0.0, float(WALL_FOLLOW_MIN_MOTOR_POWER))
 
         self._last_cmd = {"left": 0.0, "right": 0.0}
@@ -143,6 +145,7 @@ class WallFollowService:
                 "left_body_offset_mm",
                 "right_body_offset_mm",
                 "forward_sign",
+                "turn_sign",
                 "min_motor_power",
             ):
                 if key not in data or data[key] is None:
@@ -155,6 +158,8 @@ class WallFollowService:
                 elif key == "min_motor_power":
                     value = max(0.0, min(1.0, value))
                 elif key == "forward_sign":
+                    value = 1.0 if value >= 0 else -1.0
+                elif key == "turn_sign":
                     value = 1.0 if value >= 0 else -1.0
                 setattr(self, f"_{key}", value)
 
@@ -179,6 +184,7 @@ class WallFollowService:
                 "left_body_offset_mm": self._left_body_offset_mm,
                 "right_body_offset_mm": self._right_body_offset_mm,
                 "forward_sign": self._forward_sign,
+                "turn_sign": self._turn_sign,
                 "min_motor_power": self._min_motor_power,
                 "state": self._last_state,
                 "reason": self._last_reason,
@@ -204,6 +210,7 @@ class WallFollowService:
                     "left_body_offset_mm": self._left_body_offset_mm,
                     "right_body_offset_mm": self._right_body_offset_mm,
                     "forward_sign": self._forward_sign,
+                    "turn_sign": self._turn_sign,
                     "min_motor_power": self._min_motor_power,
                     "front_arc_center_deg": WALL_FOLLOW_FRONT_CENTER_DEG,
                 },
@@ -287,6 +294,7 @@ class WallFollowService:
             search_turn = self._search_turn
             wall_lost_mm = self._wall_lost_mm
             forward_sign = self._forward_sign
+            turn_sign = self._turn_sign
             min_motor_power = self._min_motor_power
 
         z = self._get_zone_snapshot(side)
@@ -308,9 +316,9 @@ class WallFollowService:
             state = "avoid_front"
             reason = f"front blocked at {front_mm:.1f} mm"
             if side == "right":
-                left, right = self._tank_from_forward_turn(0.0, +max_turn, min_motor_power)
+                left, right = self._tank_from_forward_turn(0.0, turn_sign * +max_turn, min_motor_power)
             else:
-                left, right = self._tank_from_forward_turn(0.0, -max_turn, min_motor_power)
+                left, right = self._tank_from_forward_turn(0.0, turn_sign * -max_turn, min_motor_power)
         else:
             wall_reference_mm = side_mm
 
@@ -326,7 +334,7 @@ class WallFollowService:
                 state = "search"
                 reason = "wall lost"
                 turn = -search_turn if side == "right" else +search_turn
-                left, right = self._tank_from_forward_turn(forward_sign * base_speed * 0.5, turn, min_motor_power)
+                left, right = self._tank_from_forward_turn(forward_sign * base_speed * 0.5, turn_sign * turn, min_motor_power)
             else:
                 error_mm = target_mm - wall_reference_mm
                 if abs(error_mm) <= tolerance_mm:
@@ -344,7 +352,7 @@ class WallFollowService:
 
                     state = "correct"
                     reason = f"wall error {error_mm:.1f} mm"
-                    left, right = self._tank_from_forward_turn(forward_sign * base_speed, turn, min_motor_power)
+                    left, right = self._tank_from_forward_turn(forward_sign * base_speed, turn_sign * turn, min_motor_power)
 
         resp = self.robot.drive(left, right)
         actual_l = resp.get("l", 0.0)
