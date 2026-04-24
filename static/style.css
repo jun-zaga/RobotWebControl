@@ -195,6 +195,15 @@ button.danger {
   transform: translateY(-50%);
 }
 
+#debugLog {
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  cursor: text;
+}
+
 #joystick-knob {
   position: absolute;
   left: 50%;

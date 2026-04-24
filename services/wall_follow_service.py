@@ -12,7 +12,10 @@ from config import (
     WALL_FOLLOW_SEARCH_TURN,
     WALL_FOLLOW_LOOP_HZ,
     WALL_FOLLOW_WALL_LOST_MM,
-    WALL_FOLLOW_LIDAR_LEFT_OFFSET_MM,
+    WALL_FOLLOW_LEFT_BODY_OFFSET_MM,
+    WALL_FOLLOW_RIGHT_BODY_OFFSET_MM,
+    WALL_FOLLOW_FORWARD_SIGN,
+    WALL_FOLLOW_MIN_MOTOR_POWER,
     WALL_FOLLOW_FRONT_CENTER_DEG,
     WALL_FOLLOW_FRONT_HALF_ANGLE_DEG,
     WALL_FOLLOW_RIGHT_CENTER_DEG,
@@ -50,7 +53,10 @@ class WallFollowService:
         self._search_turn = float(WALL_FOLLOW_SEARCH_TURN)
         self._wall_lost_mm = float(WALL_FOLLOW_WALL_LOST_MM)
         self._loop_hz = float(WALL_FOLLOW_LOOP_HZ)
-        self._lidar_left_offset_mm = float(WALL_FOLLOW_LIDAR_LEFT_OFFSET_MM)
+        self._left_body_offset_mm = float(WALL_FOLLOW_LEFT_BODY_OFFSET_MM)
+        self._right_body_offset_mm = float(WALL_FOLLOW_RIGHT_BODY_OFFSET_MM)
+        self._forward_sign = 1.0 if float(WALL_FOLLOW_FORWARD_SIGN) >= 0 else -1.0
+        self._min_motor_power = max(0.0, float(WALL_FOLLOW_MIN_MOTOR_POWER))
 
         self._last_cmd = {"left": 0.0, "right": 0.0}
         self._last_state = "idle"
@@ -134,7 +140,10 @@ class WallFollowService:
                 "search_turn",
                 "wall_lost_mm",
                 "loop_hz",
-                "lidar_left_offset_mm",
+                "left_body_offset_mm",
+                "right_body_offset_mm",
+                "forward_sign",
+                "min_motor_power",
             ):
                 if key not in data or data[key] is None:
                     continue
@@ -143,6 +152,10 @@ class WallFollowService:
                 value = float(data[key])
                 if key == "tolerance_mm":
                     value = max(0.0, value)
+                elif key == "min_motor_power":
+                    value = max(0.0, min(1.0, value))
+                elif key == "forward_sign":
+                    value = 1.0 if value >= 0 else -1.0
                 setattr(self, f"_{key}", value)
 
         return self.get_status()
@@ -163,7 +176,10 @@ class WallFollowService:
                 "search_turn": self._search_turn,
                 "wall_lost_mm": self._wall_lost_mm,
                 "loop_hz": self._loop_hz,
-                "lidar_left_offset_mm": self._lidar_left_offset_mm,
+                "left_body_offset_mm": self._left_body_offset_mm,
+                "right_body_offset_mm": self._right_body_offset_mm,
+                "forward_sign": self._forward_sign,
+                "min_motor_power": self._min_motor_power,
                 "state": self._last_state,
                 "reason": self._last_reason,
                 "last_error_mm": self._last_error_mm,
@@ -185,7 +201,10 @@ class WallFollowService:
                     "search_turn": self._search_turn,
                     "wall_lost_mm": self._wall_lost_mm,
                     "loop_hz": self._loop_hz,
-                    "lidar_left_offset_mm": self._lidar_left_offset_mm,
+                    "left_body_offset_mm": self._left_body_offset_mm,
+                    "right_body_offset_mm": self._right_body_offset_mm,
+                    "forward_sign": self._forward_sign,
+                    "min_motor_power": self._min_motor_power,
                     "front_arc_center_deg": WALL_FOLLOW_FRONT_CENTER_DEG,
                 },
                 "last_update_ts": self._last_update_ts,
@@ -210,10 +229,10 @@ class WallFollowService:
         if raw_mm is None:
             return None
 
-        d = max(0.0, float(self._lidar_left_offset_mm))
         if side == "left":
-            return raw_mm + d
-        return max(0.0, raw_mm - d)
+            return max(0.0, float(raw_mm) - float(self._left_body_offset_mm))
+
+        return max(0.0, float(raw_mm) - float(self._right_body_offset_mm))
 
     def _get_zone_snapshot(self, side):
         front = self.lidar.get_zone_min(WALL_FOLLOW_FRONT_CENTER_DEG, WALL_FOLLOW_FRONT_HALF_ANGLE_DEG)
@@ -252,7 +271,8 @@ class WallFollowService:
             "front_side_mm": front_side_mm,
             "back_side_mm": back_side_mm,
             "scan_age_sec": self.lidar.get_status().get("last_scan_age_sec"),
-            "lidar_left_offset_mm": self._lidar_left_offset_mm,
+            "left_body_offset_mm": self._left_body_offset_mm,
+            "right_body_offset_mm": self._right_body_offset_mm,
         }
 
     def _step(self):
@@ -266,6 +286,8 @@ class WallFollowService:
             max_turn = self._max_turn
             search_turn = self._search_turn
             wall_lost_mm = self._wall_lost_mm
+            forward_sign = self._forward_sign
+            min_motor_power = self._min_motor_power
 
         z = self._get_zone_snapshot(side)
         front_mm = z["front_mm"]
@@ -286,29 +308,31 @@ class WallFollowService:
             state = "avoid_front"
             reason = f"front blocked at {front_mm:.1f} mm"
             if side == "right":
-                left, right = self._tank_from_forward_turn(0.0, +max_turn)
+                left, right = self._tank_from_forward_turn(0.0, +max_turn, min_motor_power)
             else:
-                left, right = self._tank_from_forward_turn(0.0, -max_turn)
+                left, right = self._tank_from_forward_turn(0.0, -max_turn, min_motor_power)
         else:
             wall_reference_mm = side_mm
-            if front_side_mm is not None and back_side_mm is not None:
-                wall_reference_mm = min(front_side_mm, back_side_mm)
-            elif front_side_mm is not None:
-                wall_reference_mm = front_side_mm
-            elif back_side_mm is not None:
-                wall_reference_mm = back_side_mm
+
+            if side == "right":
+                candidates = [v for v in (side_mm, back_side_mm) if v is not None]
+            else:
+                candidates = [v for v in (side_mm, front_side_mm, back_side_mm) if v is not None]
+
+            if candidates:
+                wall_reference_mm = sum(candidates) / len(candidates)
 
             if wall_reference_mm is None or wall_reference_mm >= wall_lost_mm:
                 state = "search"
                 reason = "wall lost"
                 turn = -search_turn if side == "right" else +search_turn
-                left, right = self._tank_from_forward_turn(-base_speed * 0.5, turn)
+                left, right = self._tank_from_forward_turn(forward_sign * base_speed * 0.5, turn, min_motor_power)
             else:
                 error_mm = target_mm - wall_reference_mm
                 if abs(error_mm) <= tolerance_mm:
                     state = "follow"
                     reason = "within band"
-                    left, right = self._tank_from_forward_turn(-base_speed, 0.0)
+                    left, right = self._tank_from_forward_turn(forward_sign * base_speed, 0.0, min_motor_power)
                 else:
                     norm_error = error_mm / max(1.0, target_mm)
                     turn_mag = self.clamp(abs(norm_error) * turn_gain, 0.0, max_turn)
@@ -320,7 +344,7 @@ class WallFollowService:
 
                     state = "correct"
                     reason = f"wall error {error_mm:.1f} mm"
-                    left, right = self._tank_from_forward_turn(-base_speed, turn)
+                    left, right = self._tank_from_forward_turn(forward_sign * base_speed, turn, min_motor_power)
 
         resp = self.robot.drive(left, right)
         actual_l = resp.get("l", 0.0)
@@ -342,7 +366,23 @@ class WallFollowService:
             flush=True,
         )
 
-    def _tank_from_forward_turn(self, forward, turn):
+    def _apply_min_power(self, x, min_motor_power):
+        x = float(x)
+        min_motor_power = max(0.0, min(1.0, float(min_motor_power)))
+
+        if abs(x) < 0.02:
+            return 0.0
+        if abs(x) < min_motor_power:
+            return min_motor_power if x > 0 else -min_motor_power
+        return x
+
+    def _tank_from_forward_turn(self, forward, turn, min_motor_power=0.0):
         left = self.clamp(float(forward) + float(turn), -1.0, 1.0)
         right = self.clamp(float(forward) - float(turn), -1.0, 1.0)
+
+        left = self._apply_min_power(left, min_motor_power)
+        right = self._apply_min_power(right, min_motor_power)
+
+        left = self.clamp(left, -1.0, 1.0)
+        right = self.clamp(right, -1.0, 1.0)
         return left, right

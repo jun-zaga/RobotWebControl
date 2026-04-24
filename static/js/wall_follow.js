@@ -1,8 +1,23 @@
 import { $, setText, postJSON, getJSON, debugLog } from "./api.js";
 
+let wfStatusTimer = null;
+
 function num(id) {
   const el = $(id);
   return el ? Number(el.value) : 0;
+}
+
+function stopStatusPolling() {
+  if (wfStatusTimer) {
+    window.clearInterval(wfStatusTimer);
+    wfStatusTimer = null;
+    debugLog("[wall_follow]", "status polling stopped");
+  }
+}
+
+function startStatusPolling() {
+  stopStatusPolling();
+  wfStatusTimer = window.setInterval(fetchStatus, 1000);
 }
 
 function setStatus(running, detail = "") {
@@ -90,9 +105,11 @@ function renderStatus(data) {
 async function fetchStatus() {
   try {
     const data = await getJSON("/api/wall_follow");
+    if (!data) throw new Error("no response data");
     renderStatus(data);
     return data;
   } catch (err) {
+    stopStatusPolling();
     setStatus(false, "error");
     const telem = $("wfTelemetry");
     if (telem) telem.textContent = "wall follow status unavailable";
@@ -131,6 +148,7 @@ export function initWallFollow() {
       debugLog("[wall_follow]", { action: "start_click", payload });
       const data = await postJSON("/api/wall_follow/start", payload);
       renderStatus(data);
+      startStatusPolling();
     });
   }
 
@@ -146,6 +164,7 @@ export function initWallFollow() {
   if (stopBtn) {
     stopBtn.addEventListener("click", async () => {
       debugLog("[wall_follow]", { action: "stop_click" });
+      stopStatusPolling();
       const data = await postJSON("/api/wall_follow/stop", {});
       renderStatus(data);
     });
@@ -156,5 +175,5 @@ export function initWallFollow() {
   }
 
   fetchStatus();
-  window.setInterval(fetchStatus, 1000);
+  startStatusPolling();
 }
