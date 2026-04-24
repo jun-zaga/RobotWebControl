@@ -37,22 +37,26 @@ TTS_DEFAULT_VOL = 1.0
 # -------------------------------------------------
 WALL_FOLLOW_DEFAULT_SIDE = "right"
 WALL_FOLLOW_TARGET_MM = 180.0
-WALL_FOLLOW_RIGHT_BODY_OFFSET_MM = 680.0
+WALL_FOLLOW_RIGHT_BODY_OFFSET_MM = 340.0
 WALL_FOLLOW_LEFT_BODY_OFFSET_MM = 0.0
 WALL_FOLLOW_FRONT_STOP_MM = 380.0
-WALL_FOLLOW_BASE_SPEED = 0.90
+WALL_FOLLOW_BASE_SPEED = 0.50
+WALL_FOLLOW_TURN_GAIN = 0.8
+WALL_FOLLOW_MAX_TURN = 0.30
+WALL_FOLLOW_SEARCH_TURN = 0.25
+WALL_FOLLOW_TOLERANCE_MM = 45.0
+
+# Your drive hardware appears to use negative values for forward motion.
+# Flip this to +1.0 if manual positive values move the robot forward.
+WALL_FOLLOW_FORWARD_SIGN = -1.0
+
+# Flip steering correction if the robot turns toward the wall instead of away.
+WALL_FOLLOW_TURN_SIGN = 1.0
+
+# Minimum absolute wheel command that reliably overcomes static friction.
+WALL_FOLLOW_MIN_MOTOR_POWER = 0.38
 WALL_FOLLOW_LOOP_HZ = 12.0
 WALL_FOLLOW_WALL_LOST_MM = 900.0
-
-WALL_FOLLOW_BASE_SPEED = 0.60
-WALL_FOLLOW_TURN_GAIN = 1.0
-WALL_FOLLOW_MAX_TURN = 0.40
-WALL_FOLLOW_SEARCH_TURN = 0.35
-WALL_FOLLOW_TOLERANCE_MM = 45.0
-WALL_FOLLOW_TURN_SIGN = -1.0
-
-WALL_FOLLOW_FORWARD_SIGN = -1.0
-WALL_FOLLOW_MIN_MOTOR_POWER = 0.38
 
 # -------------------------------------------------
 # Wall follow zones

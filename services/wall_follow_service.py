@@ -346,9 +346,9 @@ class WallFollowService:
                     turn_mag = self.clamp(abs(norm_error) * turn_gain, 0.0, max_turn)
 
                     if side == "right":
-                        turn = +turn_mag if error_mm < 0 else -turn_mag
+                        turn = +turn_mag if error_mm > 0 else -turn_mag
                     else:
-                        turn = -turn_mag if error_mm < 0 else +turn_mag
+                        turn = -turn_mag if error_mm > 0 else +turn_mag
 
                     state = "correct"
                     reason = f"wall error {error_mm:.1f} mm"
