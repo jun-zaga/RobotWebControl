@@ -53,6 +53,9 @@ WALL_FOLLOW_FORWARD_SIGN = -1.0
 # Flip steering correction if the robot turns toward the wall instead of away.
 WALL_FOLLOW_TURN_SIGN = 1.0
 
+WALL_FOLLOW_LEFT_MOTOR_SIGN = 1.0
+WALL_FOLLOW_RIGHT_MOTOR_SIGN = -1.0
+
 # Minimum absolute wheel command that reliably overcomes static friction.
 WALL_FOLLOW_MIN_MOTOR_POWER = 0.38
 WALL_FOLLOW_LOOP_HZ = 12.0

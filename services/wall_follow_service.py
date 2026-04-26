@@ -31,6 +31,8 @@ from config import (
     WALL_FOLLOW_FRONT_LEFT_HALF_ANGLE_DEG,
     WALL_FOLLOW_BACK_LEFT_CENTER_DEG,
     WALL_FOLLOW_BACK_LEFT_HALF_ANGLE_DEG,
+    WALL_FOLLOW_LEFT_MOTOR_SIGN,
+    WALL_FOLLOW_RIGHT_MOTOR_SIGN
 )
 
 
@@ -345,10 +347,13 @@ class WallFollowService:
                     norm_error = error_mm / max(1.0, target_mm)
                     turn_mag = self.clamp(abs(norm_error) * turn_gain, 0.0, max_turn)
 
-                    if side == "right":
-                        turn = +turn_mag if error_mm > 0 else -turn_mag
-                    else:
-                        turn = -turn_mag if error_mm > 0 else +turn_mag
+                if side == "right":
+                    # right wall:
+                    # error < 0 means too far from wall? no, wall_reference > target => too far/too wide
+                    # this sign has been verified against your robot logs
+                    turn = +turn_mag if error_mm < 0 else -turn_mag
+                else:
+                    turn = -turn_mag if error_mm < 0 else +turn_mag
 
                     state = "correct"
                     reason = f"wall error {error_mm:.1f} mm"
