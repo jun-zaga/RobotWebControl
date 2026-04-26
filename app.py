@@ -3,20 +3,20 @@ from flask import Flask
 import hardware.robot_control as rc
 from actions.action_library import ACTIONS
 from actions.action_runner import ActionRunner
-from dialog.dialog_engine import DialogEngine
-
 from config import SCRIPT_PATH
+from dialog.dialog_engine import DialogEngine
+from routes.dialog_routes import create_dialog_blueprint
+from routes.greeter_routes import create_greeter_blueprint
+from routes.robot_routes import create_robot_blueprint
+from routes.system_routes import create_system_blueprint
+from routes.tts_routes import create_tts_blueprint
 from services.dialog_service import DialogService
+from services.greeter_service import GreeterService
 from services.lidar_service import LidarService
 from services.robot_service import RobotService
 from services.safety_service import SafetyService
 from services.tts_service import TTSService
 from services.wall_follow_service import WallFollowService
-
-from routes.robot_routes import create_robot_blueprint
-from routes.dialog_routes import create_dialog_blueprint
-from routes.system_routes import create_system_blueprint
-from routes.tts_routes import create_tts_blueprint
 
 
 def create_app():
@@ -30,6 +30,7 @@ def create_app():
     lidar = LidarService()
     robot = RobotService(rc=rc, lidar_service=lidar, safety_service=safety)
     wall_follow = WallFollowService(robot_service=robot, lidar_service=lidar)
+    greeter = GreeterService(robot_service=robot, lidar_service=lidar, tts_service=tts)
 
     def on_action_state_change(name: str):
         print(f"[STATE] -> {name}", flush=True)
@@ -58,17 +59,18 @@ def create_app():
         "safety": safety,
         "runner": runner,
         "wall_follow": wall_follow,
+        "greeter": greeter,
     }
 
     app.register_blueprint(create_robot_blueprint())
     app.register_blueprint(create_dialog_blueprint())
     app.register_blueprint(create_tts_blueprint())
     app.register_blueprint(create_system_blueprint())
+    app.register_blueprint(create_greeter_blueprint())
 
     safety.start()
     lidar.start()
     wall_follow.start()
-
     return app
 
 
