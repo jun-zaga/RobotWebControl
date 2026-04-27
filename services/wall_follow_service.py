@@ -301,14 +301,7 @@ class WallFollowService:
             "right_body_offset_mm": self._right_body_offset_mm,
         }
 
-    def _apply_min_power(self, val):
-        min_power = self.config.min_motor_power
-        if abs(val) < min_power:
-            return min_power * (1 if val >= 0 else -1)
-        return val
-
     def _step(self):
-        # Copy config under lock, but do not hold the lock while driving.
         with self._lock:
             side = self._side
             target_mm = self._target_mm
@@ -344,12 +337,7 @@ class WallFollowService:
             state = "avoid_front"
             reason = f"front blocked at {front_mm:.1f} mm"
 
-            # Turn away from the wall side.
-            if side == "right":
-                turn = +max_turn
-            else:
-                turn = -max_turn
-
+            turn = -max_turn if side == "left" else +max_turn
             left, right = self._tank_from_forward_turn(
                 0.0,
                 turn_sign * turn,
@@ -364,10 +352,7 @@ class WallFollowService:
                 state = "search"
                 reason = "wall lost"
 
-                # For left wall, gently turn left to search.
-                # For right wall, gently turn right to search.
                 turn = +search_turn if side == "left" else -search_turn
-
                 left, right = self._tank_from_forward_turn(
                     forward_sign * base_speed * 0.65,
                     turn_sign * turn,
@@ -392,14 +377,8 @@ class WallFollowService:
                     turn_mag = self.clamp(abs(norm_error) * turn_gain, 0.0, max_turn)
 
                     if side == "left":
-                        # Left wall:
-                        # error > 0 means too far, turn left toward wall.
-                        # error < 0 means too close, turn right away from wall.
                         turn = +turn_mag if error_mm > 0 else -turn_mag
                     else:
-                        # Right wall:
-                        # error > 0 means too far, turn right toward wall.
-                        # error < 0 means too close, turn left away from wall.
                         turn = -turn_mag if error_mm > 0 else +turn_mag
 
                     state = "correct"
@@ -411,8 +390,6 @@ class WallFollowService:
                         min_motor_power,
                     )
 
-        left  = self._apply_min_power(left)
-        right = self._apply_min_power(right)
         resp = self.robot.drive(left, right)
 
         actual_l = resp.get("l", left)
@@ -440,11 +417,9 @@ class WallFollowService:
         x = float(x)
         min_motor_power = max(0.0, min(1.0, float(min_motor_power)))
 
-        # Keep true stop as true stop.
         if abs(x) < 0.02:
             return 0.0
 
-        # Force weak wheel commands above static friction.
         if abs(x) < min_motor_power:
             return min_motor_power if x > 0 else -min_motor_power
 
