@@ -301,6 +301,12 @@ class WallFollowService:
             "right_body_offset_mm": self._right_body_offset_mm,
         }
 
+    def _apply_min_power(self, val):
+        min_power = self.config.min_motor_power
+        if abs(val) < min_power:
+            return min_power * (1 if val >= 0 else -1)
+        return val
+
     def _step(self):
         # Copy config under lock, but do not hold the lock while driving.
         with self._lock:
@@ -405,6 +411,8 @@ class WallFollowService:
                         min_motor_power,
                     )
 
+        left  = self._apply_min_power(left)
+        right = self._apply_min_power(right)
         resp = self.robot.drive(left, right)
 
         actual_l = resp.get("l", left)
