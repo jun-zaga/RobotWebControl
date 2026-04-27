@@ -31,8 +31,6 @@ from config import (
     WALL_FOLLOW_FRONT_LEFT_HALF_ANGLE_DEG,
     WALL_FOLLOW_BACK_LEFT_CENTER_DEG,
     WALL_FOLLOW_BACK_LEFT_HALF_ANGLE_DEG,
-    WALL_FOLLOW_LEFT_MOTOR_SIGN,
-    WALL_FOLLOW_RIGHT_MOTOR_SIGN
 )
 
 
@@ -50,17 +48,21 @@ class WallFollowService:
         self._target_mm = float(WALL_FOLLOW_TARGET_MM)
         self._tolerance_mm = float(WALL_FOLLOW_TOLERANCE_MM)
         self._front_stop_mm = float(WALL_FOLLOW_FRONT_STOP_MM)
+
         self._base_speed = float(WALL_FOLLOW_BASE_SPEED)
         self._turn_gain = float(WALL_FOLLOW_TURN_GAIN)
         self._max_turn = float(WALL_FOLLOW_MAX_TURN)
         self._search_turn = float(WALL_FOLLOW_SEARCH_TURN)
+
         self._wall_lost_mm = float(WALL_FOLLOW_WALL_LOST_MM)
         self._loop_hz = float(WALL_FOLLOW_LOOP_HZ)
+
         self._left_body_offset_mm = float(WALL_FOLLOW_LEFT_BODY_OFFSET_MM)
         self._right_body_offset_mm = float(WALL_FOLLOW_RIGHT_BODY_OFFSET_MM)
+
         self._forward_sign = 1.0 if float(WALL_FOLLOW_FORWARD_SIGN) >= 0 else -1.0
         self._turn_sign = 1.0 if float(WALL_FOLLOW_TURN_SIGN) >= 0 else -1.0
-        self._min_motor_power = max(0.0, float(WALL_FOLLOW_MIN_MOTOR_POWER))
+        self._min_motor_power = max(0.0, min(1.0, float(WALL_FOLLOW_MIN_MOTOR_POWER)))
 
         self._last_cmd = {"left": 0.0, "right": 0.0}
         self._last_state = "idle"
@@ -80,6 +82,7 @@ class WallFollowService:
     def start(self):
         if self._started:
             return
+
         self._started = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -152,9 +155,12 @@ class WallFollowService:
             ):
                 if key not in data or data[key] is None:
                     continue
+
                 if not self._is_number(data[key]):
                     raise ValueError(f"{key} must be a number")
+
                 value = float(data[key])
+
                 if key == "tolerance_mm":
                     value = max(0.0, value)
                 elif key == "min_motor_power":
@@ -163,6 +169,7 @@ class WallFollowService:
                     value = 1.0 if value >= 0 else -1.0
                 elif key == "turn_sign":
                     value = 1.0 if value >= 0 else -1.0
+
                 setattr(self, f"_{key}", value)
 
         return self.get_status()
@@ -170,6 +177,7 @@ class WallFollowService:
     def get_status(self):
         with self._lock:
             z = dict(self._last_zone_snapshot)
+
             return {
                 "ok": True,
                 "enabled": self._enabled,
@@ -244,10 +252,16 @@ class WallFollowService:
         return max(0.0, float(raw_mm) - float(self._right_body_offset_mm))
 
     def _get_zone_snapshot(self, side):
-        front = self.lidar.get_zone_min(WALL_FOLLOW_FRONT_CENTER_DEG, WALL_FOLLOW_FRONT_HALF_ANGLE_DEG)
+        front = self.lidar.get_zone_min(
+            WALL_FOLLOW_FRONT_CENTER_DEG,
+            WALL_FOLLOW_FRONT_HALF_ANGLE_DEG,
+        )
 
         if side == "right":
-            side_raw = self.lidar.get_zone_min(WALL_FOLLOW_RIGHT_CENTER_DEG, WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG)
+            side_raw = self.lidar.get_zone_min(
+                WALL_FOLLOW_RIGHT_CENTER_DEG,
+                WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG,
+            )
             front_side_raw = self.lidar.get_zone_min(
                 WALL_FOLLOW_FRONT_RIGHT_CENTER_DEG,
                 WALL_FOLLOW_FRONT_RIGHT_HALF_ANGLE_DEG,
@@ -257,7 +271,10 @@ class WallFollowService:
                 WALL_FOLLOW_BACK_RIGHT_HALF_ANGLE_DEG,
             )
         else:
-            side_raw = self.lidar.get_zone_min(WALL_FOLLOW_LEFT_CENTER_DEG, WALL_FOLLOW_LEFT_HALF_ANGLE_DEG)
+            side_raw = self.lidar.get_zone_min(
+                WALL_FOLLOW_LEFT_CENTER_DEG,
+                WALL_FOLLOW_LEFT_HALF_ANGLE_DEG,
+            )
             front_side_raw = self.lidar.get_zone_min(
                 WALL_FOLLOW_FRONT_LEFT_CENTER_DEG,
                 WALL_FOLLOW_FRONT_LEFT_HALF_ANGLE_DEG,
@@ -285,6 +302,7 @@ class WallFollowService:
         }
 
     def _step(self):
+        # Copy config under lock, but do not hold the lock while driving.
         with self._lock:
             side = self._side
             target_mm = self._target_mm
@@ -300,6 +318,7 @@ class WallFollowService:
             min_motor_power = self._min_motor_power
 
         z = self._get_zone_snapshot(side)
+
         front_mm = z["front_mm"]
         side_mm = z["side_mm"]
         front_side_mm = z["front_side_mm"]
@@ -314,54 +333,82 @@ class WallFollowService:
             state = "stale"
             reason = "lidar stale"
             left, right = 0.0, 0.0
+
         elif front_mm is not None and front_mm <= front_stop_mm:
             state = "avoid_front"
             reason = f"front blocked at {front_mm:.1f} mm"
+
+            # Turn away from the wall side.
             if side == "right":
-                left, right = self._tank_from_forward_turn(0.0, turn_sign * +max_turn, min_motor_power)
+                turn = +max_turn
             else:
-                left, right = self._tank_from_forward_turn(0.0, turn_sign * -max_turn, min_motor_power)
+                turn = -max_turn
+
+            left, right = self._tank_from_forward_turn(
+                0.0,
+                turn_sign * turn,
+                min_motor_power,
+            )
+
         else:
-            wall_reference_mm = side_mm
-
-            if side == "right":
-                candidates = [v for v in (side_mm, back_side_mm) if v is not None]
-            else:
-                candidates = [v for v in (side_mm, front_side_mm, back_side_mm) if v is not None]
-
-            if candidates:
-                wall_reference_mm = sum(candidates) / len(candidates)
+            candidates = [v for v in (side_mm, front_side_mm, back_side_mm) if v is not None]
+            wall_reference_mm = sum(candidates) / len(candidates) if candidates else None
 
             if wall_reference_mm is None or wall_reference_mm >= wall_lost_mm:
                 state = "search"
                 reason = "wall lost"
-                turn = -search_turn if side == "right" else +search_turn
-                left, right = self._tank_from_forward_turn(forward_sign * base_speed * 0.5, turn_sign * turn, min_motor_power)
+
+                # For left wall, gently turn left to search.
+                # For right wall, gently turn right to search.
+                turn = +search_turn if side == "left" else -search_turn
+
+                left, right = self._tank_from_forward_turn(
+                    forward_sign * base_speed * 0.65,
+                    turn_sign * turn,
+                    min_motor_power,
+                )
+
             else:
                 error_mm = target_mm - wall_reference_mm
+
                 if abs(error_mm) <= tolerance_mm:
                     state = "follow"
                     reason = "within band"
-                    left, right = self._tank_from_forward_turn(forward_sign * base_speed, 0.0, min_motor_power)
+
+                    left, right = self._tank_from_forward_turn(
+                        forward_sign * base_speed,
+                        0.0,
+                        min_motor_power,
+                    )
+
                 else:
                     norm_error = error_mm / max(1.0, target_mm)
                     turn_mag = self.clamp(abs(norm_error) * turn_gain, 0.0, max_turn)
 
-                if side == "right":
-                    # right wall:
-                    # error < 0 means too far from wall? no, wall_reference > target => too far/too wide
-                    # this sign has been verified against your robot logs
-                    turn = +turn_mag if error_mm < 0 else -turn_mag
-                else:
-                    turn = -turn_mag if error_mm < 0 else +turn_mag
+                    if side == "left":
+                        # Left wall:
+                        # error > 0 means too far, turn left toward wall.
+                        # error < 0 means too close, turn right away from wall.
+                        turn = +turn_mag if error_mm > 0 else -turn_mag
+                    else:
+                        # Right wall:
+                        # error > 0 means too far, turn right toward wall.
+                        # error < 0 means too close, turn left away from wall.
+                        turn = -turn_mag if error_mm > 0 else +turn_mag
 
                     state = "correct"
                     reason = f"wall error {error_mm:.1f} mm"
-                    left, right = self._tank_from_forward_turn(forward_sign * base_speed, turn_sign * turn, min_motor_power)
+
+                    left, right = self._tank_from_forward_turn(
+                        forward_sign * base_speed,
+                        turn_sign * turn,
+                        min_motor_power,
+                    )
 
         resp = self.robot.drive(left, right)
-        actual_l = resp.get("l", 0.0)
-        actual_r = resp.get("r", 0.0)
+
+        actual_l = resp.get("l", left)
+        actual_r = resp.get("r", right)
         safety_mode = (resp.get("safety") or {}).get("mode")
 
         with self._lock:
@@ -373,9 +420,11 @@ class WallFollowService:
             self._last_update_ts = time.time()
 
         print(
-            f"[WALL] state={state} side={side} front={front_mm} side_raw={z['side_raw_mm']} "
-            f"side_adj={side_mm} front_side_adj={front_side_mm} back_side_adj={back_side_mm} "
-            f"err={error_mm} cmd=({actual_l:.2f},{actual_r:.2f}) safety={safety_mode}",
+            f"[WALL] state={state} side={side} front={front_mm} "
+            f"side_raw={z['side_raw_mm']} side_adj={side_mm} "
+            f"front_side_adj={front_side_mm} back_side_adj={back_side_mm} "
+            f"err={error_mm} cmd=({actual_l:.2f},{actual_r:.2f}) "
+            f"safety={safety_mode}",
             flush=True,
         )
 
@@ -383,10 +432,14 @@ class WallFollowService:
         x = float(x)
         min_motor_power = max(0.0, min(1.0, float(min_motor_power)))
 
+        # Keep true stop as true stop.
         if abs(x) < 0.02:
             return 0.0
+
+        # Force weak wheel commands above static friction.
         if abs(x) < min_motor_power:
             return min_motor_power if x > 0 else -min_motor_power
+
         return x
 
     def _tank_from_forward_turn(self, forward, turn, min_motor_power=0.0):
@@ -398,4 +451,5 @@ class WallFollowService:
 
         left = self.clamp(left, -1.0, 1.0)
         right = self.clamp(right, -1.0, 1.0)
+
         return left, right
