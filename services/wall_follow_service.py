@@ -458,8 +458,8 @@ class WallFollowService:
         left = self.clamp(float(forward) + float(turn), -1.0, 1.0)
         right = self.clamp(float(forward) - float(turn), -1.0, 1.0)
 
-        left = self._apply_min_power(left, min_motor_power)
-        right = self._apply_min_power(right, min_motor_power)
+        left  = self._apply_min_power(left, self.config.min_motor_power)
+        right = self._apply_min_power(right, self.config.min_motor_power)
 
         left = self.clamp(left, -1.0, 1.0)
         right = self.clamp(right, -1.0, 1.0)
