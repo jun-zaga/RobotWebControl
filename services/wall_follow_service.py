@@ -284,6 +284,12 @@ class WallFollowService:
             "right_body_offset_mm": self._right_body_offset_mm,
         }
 
+    def _apply_min_power(self, val):
+        min_power = self.config.min_motor_power
+        if abs(val) < min_power:
+            return min_power * (1 if val >= 0 else -1)
+        return val
+
     def _step(self):
         with self._lock:
             side = self._side
@@ -359,6 +365,8 @@ class WallFollowService:
                     reason = f"wall error {error_mm:.1f} mm"
                     left, right = self._tank_from_forward_turn(forward_sign * base_speed, turn_sign * turn, min_motor_power)
 
+        left  = self._apply_min_power(left)
+        right = self._apply_min_power(right)
         resp = self.robot.drive(left, right)
         actual_l = resp.get("l", 0.0)
         actual_r = resp.get("r", 0.0)
@@ -378,16 +386,6 @@ class WallFollowService:
             f"err={error_mm} cmd=({actual_l:.2f},{actual_r:.2f}) safety={safety_mode}",
             flush=True,
         )
-
-    def _apply_min_power(self, x, min_motor_power):
-        x = float(x)
-        min_motor_power = max(0.0, min(1.0, float(min_motor_power)))
-
-        if abs(x) < 0.02:
-            return 0.0
-        if abs(x) < min_motor_power:
-            return min_motor_power if x > 0 else -min_motor_power
-        return x
 
     def _tank_from_forward_turn(self, forward, turn, min_motor_power=0.0):
         left = self.clamp(float(forward) + float(turn), -1.0, 1.0)
