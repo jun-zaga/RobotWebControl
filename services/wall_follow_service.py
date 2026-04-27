@@ -301,6 +301,12 @@ class WallFollowService:
             "right_body_offset_mm": self._right_body_offset_mm,
         }
 
+    def _apply_min_power(self, val):
+        min_power = self.config.min_motor_power
+        if abs(val) < min_power:
+            return min_power * (1 if val >= 0 else -1)
+        return val
+
     def _step(self):
         with self._lock:
             side = self._side
@@ -390,6 +396,8 @@ class WallFollowService:
                         min_motor_power,
                     )
 
+        left  = self._apply_min_power(left)
+        right = self._apply_min_power(right)
         resp = self.robot.drive(left, right)
 
         actual_l = resp.get("l", left)
@@ -429,8 +437,8 @@ class WallFollowService:
         left = self.clamp(float(forward) + float(turn), -1.0, 1.0)
         right = self.clamp(float(forward) - float(turn), -1.0, 1.0)
 
-        left = self._apply_min_power(left, min_motor_power)
-        right = self._apply_min_power(right, min_motor_power)
+        left  = self._apply_min_power(left, self.config.min_motor_power)
+        right = self._apply_min_power(right, self.config.min_motor_power)
 
         left = self.clamp(left, -1.0, 1.0)
         right = self.clamp(right, -1.0, 1.0)
