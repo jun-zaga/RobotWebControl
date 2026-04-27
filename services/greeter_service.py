@@ -2,11 +2,27 @@ import enum
 import threading
 import time
 
+from config import (
+GREETER_HUMAN_DETECT_MM,
+GREETER_FRONT_OBSTACLE_MM,
+GREETER_WALL_VISIBLE_MM,
+GREETER_OPENING_MM,
+GREETER_TURN_180_SEC,
+GREETER_TURN_90_SEC,
+GREETER_FINAL_FORWARD_SEC,
+GREETER_BASE_SPEED,
+GREETER_TURN_SPEED,
+GREETER_WALL_FOLLOW_KP,
+GREETER_TARGET_SIDE_MM,
+)
+
 try:
     import speech_recognition as sr
 except Exception as e:
     sr = None
     print("[GREETER] speech_recognition import failed:", e, flush=True)
+
+
 
 
 class GreeterState(str, enum.Enum):
@@ -60,20 +76,23 @@ class GreeterService:
         self._last_heard = ""
         self._state_entered_at = time.time()
 
-        # Tunables. Adjust these first during hallway testing.
-        self.human_detect_mm = 900.0
-        self.front_obstacle_mm = 430.0
-        self.wall_visible_mm = 1500.0
-        self.opening_mm = 1800.0
-        self.center_target_mm = 720.0
-        self.wall_follow_base_speed = -0.52  # negative is forward in this repo
-        self.wall_follow_kp = 0.0008
+        # Tunables come from config.py
+        self.human_detect_mm = GREETER_HUMAN_DETECT_MM
+        self.front_obstacle_mm = GREETER_FRONT_OBSTACLE_MM
+        self.wall_visible_mm = GREETER_WALL_VISIBLE_MM
+        self.opening_mm = GREETER_OPENING_MM
+
+        self.center_target_mm = GREETER_TARGET_SIDE_MM
+        self.wall_follow_base_speed = GREETER_BASE_SPEED
+        self.wall_follow_kp = GREETER_WALL_FOLLOW_KP
+        self.turn_speed = GREETER_TURN_SPEED
+        self.turn_180_sec = GREETER_TURN_180_SEC
+        self.turn_90_sec = GREETER_TURN_90_SEC
+        self.final_move_sec = GREETER_FINAL_FORWARD_SEC
+
+        # Local safety defaults
         self.max_steer = 0.28
-        self.turn_speed = 0.55
-        self.turn_180_sec = 2.35
-        self.turn_90_sec = 1.15
         self.align_timeout_sec = 5.0
-        self.final_move_sec = 5.0
         self.loop_hz = 10.0
 
     @staticmethod
