@@ -48,7 +48,9 @@ class RobotService:
                 "safety": safety,
             }
 
-        safe_l, safe_r, safety = self.lidar.apply_safety(l, r)
+        #safe_l, safe_r, safety = self.lidar.apply_safety(l, r)
+        safe_l, safe_r = l, r
+        safety = {"mode": "disabled", "front_min_mm": None, "rear_min_mm": None, "stale": False}
 
         print(
             f"[DRIVE] req=({l:.2f},{r:.2f}) safe=({safe_l:.2f},{safe_r:.2f}) "
