@@ -25,6 +25,7 @@
 
     <section class="card">
       <h2>Wall Follow</h2>
+
       <div class="grid2 wallFollowGrid">
         <div>
           <div class="sliderRow">
@@ -36,47 +37,12 @@
           </div>
 
           <div class="sliderRow">
-            <label>Target Distance (mm) <span id="wfTargetVal" class="mono">305</span></label>
-            <input id="wfTarget" type="range" min="150" max="800" step="5" value="305" />
-          </div>
-
-          <div class="sliderRow">
-            <label>Tolerance (mm) <span id="wfToleranceVal" class="mono">60</span></label>
-            <input id="wfTolerance" type="range" min="20" max="250" step="5" value="60" />
-          </div>
-
-          <div class="sliderRow">
-            <label>Base Speed <span id="wfBaseSpeedVal" class="mono">0.18</span></label>
-            <input id="wfBaseSpeed" type="range" min="0.05" max="0.50" step="0.01" value="0.18" />
-          </div>
-
-          <div class="sliderRow">
-            <label>Max Turn <span id="wfMaxTurnVal" class="mono">0.22</span></label>
-            <input id="wfMaxTurn" type="range" min="0.05" max="0.60" step="0.01" value="0.22" />
+            <label>Status</label>
+            <div id="wfStatus" class="statusBadge idle">IDLE</div>
           </div>
         </div>
 
         <div>
-          <div class="sliderRow">
-            <label>Front Stop (mm) <span id="wfFrontStopVal" class="mono">400</span></label>
-            <input id="wfFrontStop" type="range" min="150" max="1200" step="10" value="400" />
-          </div>
-
-          <div class="sliderRow">
-            <label>Search Turn <span id="wfSearchTurnVal" class="mono">0.16</span></label>
-            <input id="wfSearchTurn" type="range" min="0.05" max="0.50" step="0.01" value="0.16" />
-          </div>
-
-          <div class="sliderRow">
-            <label>Front Arc Center (deg) <span id="wfFrontArcVal" class="mono">315</span></label>
-            <input id="wfFrontArcCenter" type="range" min="0" max="359" step="1" value="315" />
-          </div>
-
-          <div class="sliderRow">
-            <label>Status</label>
-            <div id="wfStatus" class="statusBadge idle">IDLE</div>
-          </div>
-
           <div class="sliderRow">
             <label>Telemetry</label>
             <div id="wfTelemetry" class="mono telemetryBox">side=-- front=-- state=--</div>
@@ -84,23 +50,20 @@
         </div>
       </div>
 
-      
-
       <div class="row wrapButtons">
         <button id="wfStartBtn">Start Wall Follow</button>
-        <button id="wfApplyBtn">Apply Settings</button>
         <button id="wfStopBtn" class="danger">Stop Wall Follow</button>
         <button id="wfRefreshBtn">Refresh</button>
       </div>
 
-        <section class="card">
-    <div class="row">
-      <h2 style="margin:0;">Debug Console</h2>
-      <button id="copyDebugBtn">Copy Debug Log</button>
-      <button id="clearDebugBtn">Clear</button>
-    </div>
-    <div class="mono telemetryBox debugBox" id="debugLog"></div>
-  </section>
+      <section class="card">
+        <div class="row">
+          <h2 style="margin:0;">Debug Console</h2>
+          <button id="copyDebugBtn">Copy Debug Log</button>
+          <button id="clearDebugBtn">Clear</button>
+        </div>
+        <div class="mono telemetryBox debugBox" id="debugLog"></div>
+      </section>
     </section>
 
     <section class="card">

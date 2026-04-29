@@ -1,37 +1,7 @@
 import threading
 import time
 
-from config import (
-    WALL_FOLLOW_DEFAULT_SIDE,
-    WALL_FOLLOW_TARGET_MM,
-    WALL_FOLLOW_TOLERANCE_MM,
-    WALL_FOLLOW_FRONT_STOP_MM,
-    WALL_FOLLOW_BASE_SPEED,
-    WALL_FOLLOW_TURN_GAIN,
-    WALL_FOLLOW_MAX_TURN,
-    WALL_FOLLOW_SEARCH_TURN,
-    WALL_FOLLOW_LOOP_HZ,
-    WALL_FOLLOW_WALL_LOST_MM,
-    WALL_FOLLOW_LEFT_BODY_OFFSET_MM,
-    WALL_FOLLOW_RIGHT_BODY_OFFSET_MM,
-    WALL_FOLLOW_FORWARD_SIGN,
-    WALL_FOLLOW_TURN_SIGN,
-    WALL_FOLLOW_MIN_MOTOR_POWER,
-    WALL_FOLLOW_FRONT_CENTER_DEG,
-    WALL_FOLLOW_FRONT_HALF_ANGLE_DEG,
-    WALL_FOLLOW_RIGHT_CENTER_DEG,
-    WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG,
-    WALL_FOLLOW_FRONT_RIGHT_CENTER_DEG,
-    WALL_FOLLOW_FRONT_RIGHT_HALF_ANGLE_DEG,
-    WALL_FOLLOW_BACK_RIGHT_CENTER_DEG,
-    WALL_FOLLOW_BACK_RIGHT_HALF_ANGLE_DEG,
-    WALL_FOLLOW_LEFT_CENTER_DEG,
-    WALL_FOLLOW_LEFT_HALF_ANGLE_DEG,
-    WALL_FOLLOW_FRONT_LEFT_CENTER_DEG,
-    WALL_FOLLOW_FRONT_LEFT_HALF_ANGLE_DEG,
-    WALL_FOLLOW_BACK_LEFT_CENTER_DEG,
-    WALL_FOLLOW_BACK_LEFT_HALF_ANGLE_DEG,
-)
+from config import *
 
 
 class WallFollowService:
@@ -48,21 +18,17 @@ class WallFollowService:
         self._target_mm = float(WALL_FOLLOW_TARGET_MM)
         self._tolerance_mm = float(WALL_FOLLOW_TOLERANCE_MM)
         self._front_stop_mm = float(WALL_FOLLOW_FRONT_STOP_MM)
-
         self._base_speed = float(WALL_FOLLOW_BASE_SPEED)
         self._turn_gain = float(WALL_FOLLOW_TURN_GAIN)
         self._max_turn = float(WALL_FOLLOW_MAX_TURN)
         self._search_turn = float(WALL_FOLLOW_SEARCH_TURN)
-
         self._wall_lost_mm = float(WALL_FOLLOW_WALL_LOST_MM)
         self._loop_hz = float(WALL_FOLLOW_LOOP_HZ)
-
         self._left_body_offset_mm = float(WALL_FOLLOW_LEFT_BODY_OFFSET_MM)
         self._right_body_offset_mm = float(WALL_FOLLOW_RIGHT_BODY_OFFSET_MM)
-
-        self._forward_sign = 1.0 if float(WALL_FOLLOW_FORWARD_SIGN) >= 0 else -1.0
-        self._turn_sign = 1.0 if float(WALL_FOLLOW_TURN_SIGN) >= 0 else -1.0
-        self._min_motor_power = max(0.0, min(1.0, float(WALL_FOLLOW_MIN_MOTOR_POWER)))
+        self._forward_sign = float(WALL_FOLLOW_FORWARD_SIGN)
+        self._turn_sign = float(WALL_FOLLOW_TURN_SIGN)
+        self._min_motor_power = float(WALL_FOLLOW_MIN_MOTOR_POWER)
 
         self._last_cmd = {"left": 0.0, "right": 0.0}
         self._last_state = "idle"
@@ -71,42 +37,22 @@ class WallFollowService:
         self._last_zone_snapshot = {}
         self._last_update_ts = 0.0
 
-    @staticmethod
-    def clamp(x, lo, hi):
-        return max(lo, min(hi, x))
-
-    @staticmethod
-    def _is_number(x):
-        return isinstance(x, (int, float)) and not isinstance(x, bool)
-
     def start(self):
         if self._started:
             return
-
         self._started = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
-    def enable(self, side=None, target_mm=None, tolerance_mm=None):
+    def enable(self, side=None):
         with self._lock:
             if side is not None:
                 side = str(side).strip().lower()
-                if side not in ("left", "right"):
-                    raise ValueError("side must be 'left' or 'right'")
-                self._side = side
-
-            if target_mm is not None:
-                if not self._is_number(target_mm):
-                    raise ValueError("target_mm must be a number")
-                self._target_mm = max(50.0, float(target_mm))
-
-            if tolerance_mm is not None:
-                if not self._is_number(tolerance_mm):
-                    raise ValueError("tolerance_mm must be a number")
-                self._tolerance_mm = max(0.0, float(tolerance_mm))
+                if side in ("left", "right"):
+                    self._side = side
 
             self._enabled = True
-            self._last_state = "starting"
+            self._last_state = "enabled"
             self._last_reason = "enabled"
 
         return self.get_status()
@@ -131,46 +77,11 @@ class WallFollowService:
 
     def set_params(self, data):
         with self._lock:
-            if "side" in data and data["side"] is not None:
-                side = str(data["side"]).strip().lower()
-                if side not in ("left", "right"):
-                    raise ValueError("side must be 'left' or 'right'")
-                self._side = side
-
-            for key in (
-                "target_mm",
-                "tolerance_mm",
-                "front_stop_mm",
-                "base_speed",
-                "turn_gain",
-                "max_turn",
-                "search_turn",
-                "wall_lost_mm",
-                "loop_hz",
-                "left_body_offset_mm",
-                "right_body_offset_mm",
-                "forward_sign",
-                "turn_sign",
-                "min_motor_power",
-            ):
-                if key not in data or data[key] is None:
-                    continue
-
-                if not self._is_number(data[key]):
-                    raise ValueError(f"{key} must be a number")
-
-                value = float(data[key])
-
-                if key == "tolerance_mm":
-                    value = max(0.0, value)
-                elif key == "min_motor_power":
-                    value = max(0.0, min(1.0, value))
-                elif key == "forward_sign":
-                    value = 1.0 if value >= 0 else -1.0
-                elif key == "turn_sign":
-                    value = 1.0 if value >= 0 else -1.0
-
-                setattr(self, f"_{key}", value)
+            side = data.get("side")
+            if side is not None:
+                side = str(side).strip().lower()
+                if side in ("left", "right"):
+                    self._side = side
 
         return self.get_status()
 
@@ -222,7 +133,13 @@ class WallFollowService:
                     "forward_sign": self._forward_sign,
                     "turn_sign": self._turn_sign,
                     "min_motor_power": self._min_motor_power,
-                    "front_arc_center_deg": WALL_FOLLOW_FRONT_CENTER_DEG,
+                    "front_center_deg": WALL_FOLLOW_FRONT_CENTER_DEG,
+                    "left_center_deg": WALL_FOLLOW_LEFT_CENTER_DEG,
+                    "right_center_deg": WALL_FOLLOW_RIGHT_CENTER_DEG,
+                    "front_left_center_deg": WALL_FOLLOW_FRONT_LEFT_CENTER_DEG,
+                    "front_right_center_deg": WALL_FOLLOW_FRONT_RIGHT_CENTER_DEG,
+                    "back_left_center_deg": WALL_FOLLOW_BACK_LEFT_CENTER_DEG,
+                    "back_right_center_deg": WALL_FOLLOW_BACK_RIGHT_CENTER_DEG,
                 },
                 "last_update_ts": self._last_update_ts,
             }
@@ -242,153 +159,147 @@ class WallFollowService:
 
             time.sleep(1.0 / loop_hz)
 
-    def _apply_side_offset(self, raw_mm, side):
-        if raw_mm is None:
+
+    def _zone_min_safe(self, center_deg, half_angle_deg):
+        try:
+            return self.lidar.get_zone_min(center_deg, half_angle_deg)
+        except Exception:
+            return None
+        
+    def _valid_mm(value, lo=50, hi=2500):
+        if value is None:
             return None
 
-        if side == "left":
-            return max(0.0, float(raw_mm) - float(self._left_body_offset_mm))
+        value = float(value)
 
-        return max(0.0, float(raw_mm) - float(self._right_body_offset_mm))
+        if lo <= value <= hi:
+            return value
 
-    def _get_zone_snapshot(self, side):
-        front = self.lidar.get_zone_min(
+        return None
+        
+        
+    def _get_zones(self):
+        def _valid_mm(value, lo=50, hi=2500):
+            if value is None:
+                return None
+
+            try:
+                value = float(value)
+            except Exception:
+                return None
+
+            if lo <= value <= hi:
+                return value
+
+            return None
+
+        scan_age = None
+        try:
+            scan_age = self.lidar.get_status().get("last_scan_age_sec")
+        except Exception:
+            pass
+
+        front_mm = self._zone_min_safe(
             WALL_FOLLOW_FRONT_CENTER_DEG,
             WALL_FOLLOW_FRONT_HALF_ANGLE_DEG,
         )
 
-        if side == "right":
-            side_raw = self.lidar.get_zone_min(
-                WALL_FOLLOW_RIGHT_CENTER_DEG,
-                WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG,
-            )
-            front_side_raw = self.lidar.get_zone_min(
-                WALL_FOLLOW_FRONT_RIGHT_CENTER_DEG,
-                WALL_FOLLOW_FRONT_RIGHT_HALF_ANGLE_DEG,
-            )
-            back_side_raw = self.lidar.get_zone_min(
-                WALL_FOLLOW_BACK_RIGHT_CENTER_DEG,
-                WALL_FOLLOW_BACK_RIGHT_HALF_ANGLE_DEG,
-            )
-        else:
-            side_raw = self.lidar.get_zone_min(
-                WALL_FOLLOW_LEFT_CENTER_DEG,
-                WALL_FOLLOW_LEFT_HALF_ANGLE_DEG,
-            )
-            front_side_raw = self.lidar.get_zone_min(
-                WALL_FOLLOW_FRONT_LEFT_CENTER_DEG,
-                WALL_FOLLOW_FRONT_LEFT_HALF_ANGLE_DEG,
-            )
-            back_side_raw = self.lidar.get_zone_min(
-                WALL_FOLLOW_BACK_LEFT_CENTER_DEG,
-                WALL_FOLLOW_BACK_LEFT_HALF_ANGLE_DEG,
-            )
+        if self._side == "left":
+            side_center = WALL_FOLLOW_LEFT_CENTER_DEG
+            side_half_angle = WALL_FOLLOW_LEFT_HALF_ANGLE_DEG
 
-        side_mm = self._apply_side_offset(side_raw, side)
-        front_side_mm = self._apply_side_offset(front_side_raw, side)
-        back_side_mm = self._apply_side_offset(back_side_raw, side)
+            front_side_center = WALL_FOLLOW_FRONT_LEFT_CENTER_DEG
+            front_side_half_angle = WALL_FOLLOW_FRONT_LEFT_HALF_ANGLE_DEG
+
+            back_side_center = WALL_FOLLOW_BACK_LEFT_CENTER_DEG
+            back_side_half_angle = WALL_FOLLOW_BACK_LEFT_HALF_ANGLE_DEG
+
+            body_offset = self._left_body_offset_mm
+
+        else:
+            side_center = WALL_FOLLOW_RIGHT_CENTER_DEG
+            side_half_angle = WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG
+
+            front_side_center = WALL_FOLLOW_FRONT_RIGHT_CENTER_DEG
+            front_side_half_angle = WALL_FOLLOW_FRONT_RIGHT_HALF_ANGLE_DEG
+
+            back_side_center = WALL_FOLLOW_BACK_RIGHT_CENTER_DEG
+            back_side_half_angle = WALL_FOLLOW_BACK_RIGHT_HALF_ANGLE_DEG
+
+            body_offset = self._right_body_offset_mm
+
+        raw_side_mm = self._zone_min_safe(side_center, side_half_angle)
+        front_side_mm = self._zone_min_safe(front_side_center, front_side_half_angle)
+        back_side_mm = self._zone_min_safe(back_side_center, back_side_half_angle)
+
+        raw = _valid_mm(raw_side_mm)
+        front_side = _valid_mm(front_side_mm)
+        back_side = _valid_mm(back_side_mm)
+
+        side_mm = None
+        side_source = "none"
+
+        AGREE_MM = 120
+        SELF_ECHO_MAX_MM = 240
+
+        raw_agrees = False
+
+        for other in (front_side, back_side):
+            if raw is not None and other is not None:
+                if 50 <= other <= 700 and abs(raw - other) <= AGREE_MM:
+                    raw_agrees = True
+
+        # Trust raw side only if it agrees with a nearby side slice,
+        # or if it is clearly far away. A lonely ~170mm reading is likely
+        # the robot seeing itself/bracket/body instead of the wall.
+        if raw is not None:
+            if raw_agrees:
+                side_mm = raw
+                side_source = "raw_confirmed"
+            elif raw > SELF_ECHO_MAX_MM:
+                side_mm = raw
+                side_source = "raw_far"
+            else:
+                side_mm = None
+                side_source = "raw_rejected_self_echo"
+
+        # Fallback: use front/back side only if they agree with each other.
+        if side_mm is None and front_side is not None and back_side is not None:
+            if abs(front_side - back_side) <= AGREE_MM:
+                side_mm = (front_side + back_side) / 2.0
+                side_source = "front_back_average"
+
+        if side_mm is not None:
+            side_mm = max(0.0, side_mm - float(body_offset))
 
         return {
-            "front_mm": front,
-            "side_raw_mm": side_raw,
-            "front_side_raw_mm": front_side_raw,
-            "back_side_raw_mm": back_side_raw,
+            "front_mm": front_mm,
             "side_mm": side_mm,
+            "raw_side_mm": raw_side_mm,
             "front_side_mm": front_side_mm,
             "back_side_mm": back_side_mm,
-            "scan_age_sec": self.lidar.get_status().get("last_scan_age_sec"),
-            "left_body_offset_mm": self._left_body_offset_mm,
-            "right_body_offset_mm": self._right_body_offset_mm,
+            "scan_age_sec": scan_age,
+            "side_center_deg": side_center,
+            "front_side_center_deg": front_side_center,
+            "back_side_center_deg": back_side_center,
+            "side_source": side_source,
         }
 
-    def _step(self):
-        with self._lock:
-            side = self._side
-            target_mm = self._target_mm
-            tolerance_mm = self._tolerance_mm
-            front_stop_mm = self._front_stop_mm
-            base_speed = self._base_speed
-            turn_gain = self._turn_gain
-            max_turn = self._max_turn
-            search_turn = self._search_turn
-            wall_lost_mm = self._wall_lost_mm
-            forward_sign = self._forward_sign
-            turn_sign = self._turn_sign
-            min_motor_power = self._min_motor_power
+    def _clamp_motor(self, value):
+        value = max(-1.0, min(1.0, float(value)))
 
-        z = self._get_zone_snapshot(side)
+        if abs(value) < 0.001:
+            return 0.0
 
-        front_mm = z["front_mm"]
-        side_mm = z["side_mm"]
-        front_side_mm = z["front_side_mm"]
-        back_side_mm = z["back_side_mm"]
-        scan_age_sec = z["scan_age_sec"]
+        min_power = max(0.0, min(1.0, self._min_motor_power))
+        if abs(value) < min_power:
+            return min_power if value > 0 else -min_power
 
-        state = "follow"
-        reason = "tracking wall"
-        error_mm = None
+        return value
 
-        if scan_age_sec is None or scan_age_sec > 1.0:
-            state = "stale"
-            reason = "lidar stale"
-            left, right = 0.0, 0.0
-
-        elif front_mm is not None and front_mm <= front_stop_mm:
-            state = "avoid_front"
-            reason = f"front blocked at {front_mm:.1f} mm"
-
-            turn = -max_turn if side == "left" else +max_turn
-            left, right = self._tank_from_forward_turn(
-                0.0,
-                turn_sign * turn,
-                min_motor_power,
-            )
-
-        else:
-            candidates = [v for v in (side_mm, front_side_mm, back_side_mm) if v is not None]
-            wall_reference_mm = sum(candidates) / len(candidates) if candidates else None
-
-            if wall_reference_mm is None or wall_reference_mm >= wall_lost_mm:
-                state = "search"
-                reason = "wall lost"
-
-                turn = +search_turn if side == "left" else -search_turn
-                left, right = self._tank_from_forward_turn(
-                    forward_sign * base_speed * 0.65,
-                    turn_sign * turn,
-                    min_motor_power,
-                )
-
-            else:
-                error_mm = target_mm - wall_reference_mm
-
-                if abs(error_mm) <= tolerance_mm:
-                    state = "follow"
-                    reason = "within band"
-
-                    left, right = self._tank_from_forward_turn(
-                        forward_sign * base_speed,
-                        0.0,
-                        min_motor_power,
-                    )
-
-                else:
-                    norm_error = error_mm / max(1.0, target_mm)
-                    turn_mag = self.clamp(abs(norm_error) * turn_gain, 0.0, max_turn)
-
-                    if side == "left":
-                        turn = +turn_mag if error_mm > 0 else -turn_mag
-                    else:
-                        turn = -turn_mag if error_mm > 0 else +turn_mag
-
-                    state = "correct"
-                    reason = f"wall error {error_mm:.1f} mm"
-
-                    left, right = self._tank_from_forward_turn(
-                        forward_sign * base_speed,
-                        turn_sign * turn,
-                        min_motor_power,
-                    )
+    def _drive_and_record(self, left, right, state, reason, error_mm, zones):
+        left = self._clamp_motor(left)
+        right = self._clamp_motor(right)
 
         resp = self.robot.drive(left, right)
 
@@ -401,38 +312,124 @@ class WallFollowService:
             self._last_reason = f"{reason}; safety={safety_mode}"
             self._last_error_mm = error_mm
             self._last_cmd = {"left": actual_l, "right": actual_r}
-            self._last_zone_snapshot = z
+            self._last_zone_snapshot = zones
             self._last_update_ts = time.time()
 
         print(
-            f"[WALL] state={state} side={side} front={front_mm} "
-            f"side_raw={z['side_raw_mm']} side_adj={side_mm} "
-            f"front_side_adj={front_side_mm} back_side_adj={back_side_mm} "
-            f"err={error_mm} cmd=({actual_l:.2f},{actual_r:.2f}) "
-            f"safety={safety_mode}",
+            f"[WALL] {state} cmd=({left:.2f},{right:.2f}) "
+            f"actual=({actual_l:.2f},{actual_r:.2f}) "
+            f"front={zones.get('front_mm')} side={zones.get('side_mm')} "
+            f"error={error_mm} safety={safety_mode}",
             flush=True,
         )
 
-    def _apply_min_power(self, x, min_motor_power):
-        x = float(x)
-        min_motor_power = max(0.0, min(1.0, float(min_motor_power)))
+    def _step(self):
+        with self._lock:
+            side = self._side
+            target_mm = self._target_mm
+            tolerance_mm = self._tolerance_mm
+            front_stop_mm = self._front_stop_mm
+            base_speed = abs(self._base_speed)
+            turn_gain = self._turn_gain
+            max_turn = abs(self._max_turn)
+            search_turn = abs(self._search_turn)
+            wall_lost_mm = self._wall_lost_mm
+            forward_sign = self._forward_sign
 
-        if abs(x) < 0.02:
-            return 0.0
+        zones = self._get_zones()
+        front_mm = zones.get("front_mm")
+        side_mm = zones.get("side_mm")
 
-        if abs(x) < min_motor_power:
-            return min_motor_power if x > 0 else -min_motor_power
+        # Stop if obstacle is too close in front
+        if front_mm is not None and front_mm <= front_stop_mm:
+            self._drive_and_record(
+                0.0,
+                0.0,
+                "front_blocked",
+                "front obstacle too close; stopped",
+                None,
+                zones,
+            )
+            return
 
-        return x
+        now = time.time()
 
-    def _tank_from_forward_turn(self, forward, turn, min_motor_power=0.0):
-        left = self.clamp(float(forward) + float(turn), -1.0, 1.0)
-        right = self.clamp(float(forward) - float(turn), -1.0, 1.0)
+        if not hasattr(self, "_last_good_side_mm"):
+            self._last_good_side_mm = None
+            self._last_good_side_ts = 0.0
 
-        left = self._apply_min_power(left, min_motor_power)
-        right = self._apply_min_power(right, min_motor_power)
+        if side_mm is not None and side_mm <= wall_lost_mm:
+            self._last_good_side_mm = side_mm
+            self._last_good_side_ts = now
 
-        left = self.clamp(left, -1.0, 1.0)
-        right = self.clamp(right, -1.0, 1.0)
+        recent_good_side = (
+            self._last_good_side_mm is not None
+            and now - self._last_good_side_ts <= 0.75
+        )
 
-        return left, right
+        if (side_mm is None or side_mm > wall_lost_mm) and recent_good_side:
+            side_mm = self._last_good_side_mm
+
+        if side_mm is None or side_mm > wall_lost_mm:
+            turn = max(search_turn, self._min_motor_power)
+
+            if side == "left":
+                left_power = -turn
+                right_power = turn
+                reason = "left wall lost; rotating left only"
+            else:
+                left_power = turn
+                right_power = -turn
+                reason = "right wall lost; rotating right only"
+
+            self._drive_and_record(
+                left_power,
+                right_power,
+                "searching",
+                reason,
+                None,
+                zones,
+            )
+            return
+
+        # Positive error means too far from wall
+        error_mm = float(side_mm) - float(target_mm)
+
+        if abs(error_mm) <= tolerance_mm:
+            left_power = base_speed
+            right_power = base_speed
+            reason = "wall centered"
+        else:
+            turn = min(abs(error_mm) * turn_gain / 1000.0, max_turn)
+
+            if side == "left":
+                if error_mm > 0:
+                    # Too far from left wall -> steer left
+                    left_power = base_speed - turn
+                    right_power = base_speed + turn
+                    reason = "left wall too far; turning left"
+                else:
+                    # Too close to left wall -> steer right
+                    left_power = base_speed + turn
+                    right_power = base_speed - turn
+                    reason = "left wall too close; turning right"
+            else:
+                if error_mm > 0:
+                    # Too far from right wall -> steer right
+                    left_power = base_speed + turn
+                    right_power = base_speed - turn
+                    reason = "right wall too far; turning right"
+                else:
+                    # Too close to right wall -> steer left
+                    left_power = base_speed - turn
+                    right_power = base_speed + turn
+                    reason = "right wall too close; turning left"
+
+        self._drive_and_record(
+            forward_sign * left_power,
+            forward_sign * right_power,
+            "following",
+            reason,
+            error_mm,
+            zones,
+        )

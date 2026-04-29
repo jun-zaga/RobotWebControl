@@ -21,8 +21,8 @@ except Exception as e:
 
 
 class LidarService:
-    BLOCK_HOLD_SEC = 0.8
-    BLOCK_CONFIRM_SCANS = 2
+    BLOCK_HOLD_SEC = 0.25
+    BLOCK_CONFIRM_SCANS = 3
 
     def __init__(self):
         self._lidar = None
@@ -133,8 +133,11 @@ class LidarService:
         safe_left = float(left)
         safe_right = float(right)
 
-        forward_req = left < 0 or right < 0
-        reverse_req = left > 0 or right > 0
+        # Only treat it as forward/reverse if BOTH wheels request that direction.
+        # If wheels are opposite signs, it is a pivot turn and should not be blocked
+        # by front/rear safety.
+        forward_req = left < 0 and right < 0
+        reverse_req = left > 0 and right > 0
 
         if forward_req and now < front_blocked_until:
             safety["mode"] = "blocked_front_sticky"

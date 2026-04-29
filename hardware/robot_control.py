@@ -25,8 +25,15 @@ HEAD_PAN = 4
 LEFT_ARM_CHANNELS = [5, 6, 7, 8, 9, 10]
 RIGHT_ARM_CHANNELS = [11, 12, 13, 14, 15, 16]
 
-WHEEL_CENTER = 6000
-WHEEL_RANGE = 1000
+# Continuous servo calibration.
+# 6000 = neutral/stop on Maestro target units.
+# Negative command should move BOTH drive wheels forward on your robot.
+LEFT_WHEEL_CENTER = 6000
+RIGHT_WHEEL_CENTER = 6000
+
+# Right wheel gets extra pulse range because it has been anchoring/stalling under load.
+LEFT_WHEEL_RANGE = 250
+RIGHT_WHEEL_RANGE = 1000
 
 PAN_MIN, PAN_MAX = 4500, 7500
 TILT_MIN, TILT_MAX = 4700, 7300
@@ -35,9 +42,11 @@ WAIST_MIN, WAIST_MAX = 4600, 7400
 ARM_CENTER = 5900
 ARM_HALF_RANGE = 1600
 
+# Direction-specific gains after command sign is known.
+# Based on your tests, negative is forward for both wheels.
 LEFT_FWD_GAIN = 1.00
-LEFT_REV_GAIN = 1.08
-RIGHT_FWD_GAIN = 0.94
+LEFT_REV_GAIN = 1.00
+RIGHT_FWD_GAIN = 1.00
 RIGHT_REV_GAIN = 1.00
 
 LEFT_INV = {1: True, 3: True}
@@ -72,9 +81,9 @@ def norm_to_range(n01, lo, hi):
     return int(lo + n01 * (hi - lo))
 
 
-def wheel_target(n):
+def wheel_target(n, center, wheel_range):
     n = clamp(float(n), -1.0, 1.0)
-    return int(WHEEL_CENTER + n * WHEEL_RANGE)
+    return int(center + n * wheel_range)
 
 
 def arm_target(pos01):
@@ -93,12 +102,13 @@ def drive(l, r):
     l = clamp(float(l), -1.0, 1.0)
     r = clamp(float(r), -1.0, 1.0)
 
-    if l >= 0:
+    # Negative is forward for both wheels based on your wheel tests.
+    if l < 0:
         l *= LEFT_FWD_GAIN
     else:
         l *= LEFT_REV_GAIN
 
-    if r >= 0:
+    if r < 0:
         r *= RIGHT_FWD_GAIN
     else:
         r *= RIGHT_REV_GAIN
@@ -106,13 +116,22 @@ def drive(l, r):
     l = clamp(l, -1.0, 1.0)
     r = clamp(r, -1.0, 1.0)
 
-    _set_target(LEFT_WHEEL, wheel_target(l), "left_wheel")
-    _set_target(RIGHT_WHEEL, wheel_target(r), "right_wheel")
+    left_target = wheel_target(l, LEFT_WHEEL_CENTER, LEFT_WHEEL_RANGE)
+    right_target = wheel_target(r, RIGHT_WHEEL_CENTER, RIGHT_WHEEL_RANGE)
+
+    print(
+        f"[HW DRIVE] cmd=({l:.2f},{r:.2f}) "
+        f"targets=({left_target},{right_target})",
+        flush=True,
+    )
+
+    _set_target(LEFT_WHEEL, left_target, "left_wheel")
+    _set_target(RIGHT_WHEEL, right_target, "right_wheel")
 
 
 def stop():
-    _set_target(LEFT_WHEEL, WHEEL_CENTER, "left_wheel_stop")
-    _set_target(RIGHT_WHEEL, WHEEL_CENTER, "right_wheel_stop")
+    _set_target(LEFT_WHEEL, LEFT_WHEEL_CENTER, "left_wheel_stop")
+    _set_target(RIGHT_WHEEL, RIGHT_WHEEL_CENTER, "right_wheel_stop")
 
 
 def head_pan(pos01):

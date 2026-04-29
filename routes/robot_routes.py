@@ -113,22 +113,17 @@ def create_robot_blueprint():
 
     @bp.post("/api/wall_follow/start")
     def api_wall_follow_start():
-        wall = current_app.config["services"].get("wall_follow")
-        if wall is None:
-            return jsonify(ok=False, error="wall_follow service missing"), 500
+        services = current_app.config["services"]
+        wall = services["wall_follow"]
 
         data = request.get_json(silent=True) or {}
-        try:
-            wall.set_params(data)
-            return jsonify(
-                wall.enable(
-                    side=data.get("side"),
-                    target_mm=data.get("target_mm"),
-                    tolerance_mm=data.get("tolerance_mm"),
-                )
-            )
-        except ValueError as e:
-            return jsonify(ok=False, error=str(e)), 400
+        side = str(data.get("side", "left")).strip().lower()
+
+        if side not in ("left", "right"):
+            return jsonify(ok=False, error="side must be left or right"), 400
+
+        wall.start()
+        return jsonify(wall.enable(side=side))
 
     @bp.post("/api/wall_follow/stop")
     def api_wall_follow_stop():
