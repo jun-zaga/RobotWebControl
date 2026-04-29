@@ -48,9 +48,10 @@ class RobotService:
                 "safety": safety,
             }
 
-        #safe_l, safe_r, safety = self.lidar.apply_safety(l, r)
-        safe_l, safe_r = l, r
-        safety = {"mode": "disabled", "front_min_mm": None, "rear_min_mm": None, "stale": False}
+        if getattr(self, "wall_follow_active", False):
+            safe_l, safe_r, safety = l, r, {"mode": "wall_follow_bypass"}
+        else:
+            safe_l, safe_r, safety = self.lidar.apply_safety(l, r)
 
         print(
             f"[DRIVE] req=({l:.2f},{r:.2f}) safe=({safe_l:.2f},{safe_r:.2f}) "
