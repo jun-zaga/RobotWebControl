@@ -348,7 +348,7 @@ class WallFollowService:
                     return
 
             else:
-                if front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM:
+                if front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM and front_mm is not None and front_mm > 900:
                     left, right = self._pivot_right(WALL_FOLLOW_CORNER_TURN)
                     self._drive_and_record(
                         left,
@@ -360,13 +360,13 @@ class WallFollowService:
                     )
                     return
 
-                if front_side_mm < WALL_FOLLOW_CORNER_CLOSE_MM:
-                    left, right = self._pivot_left(WALL_FOLLOW_CORNER_TURN)
+                if front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM and front_mm is not None and front_mm > 900:
+                    left, right = self._pivot_right(WALL_FOLLOW_CORNER_TURN)
                     self._drive_and_record(
                         left,
                         right,
-                        "corner_left",
-                        "front-right close; pivoting left away from corner",
+                        "corner_right",
+                        "front and front-right opened; pivoting right with corner",
                         error_mm,
                         zones,
                     )

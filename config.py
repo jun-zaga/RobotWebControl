@@ -73,7 +73,10 @@ WALL_FOLLOW_WALL_LOST_MM = 900.0
 WALL_FOLLOW_FORWARD_SIGN = -1.0
 
 # Drive power.
-WALL_FOLLOW_BASE_SPEED = 0.55
+WALL_FOLLOW_BASE_SPEED = 0.45
+WALL_FOLLOW_CORNER_TURN = 0.85
+WALL_FOLLOW_CORNER_OPEN_MM = 1100.0
+WALL_FOLLOW_CORNER_CLOSE_MM = 260.0
 
 # Steering correction.
 WALL_FOLLOW_TURN_GAIN = 0.65
@@ -110,13 +113,10 @@ WALL_FOLLOW_FRONT_RIGHT_CENTER_DEG = 202.5
 WALL_FOLLOW_FRONT_RIGHT_HALF_ANGLE_DEG = 15.0
 
 # If the front-side opens up, the wall is turning away.
-WALL_FOLLOW_CORNER_OPEN_MM = 700.0
 
 # If the front-side gets close, the wall/corner is coming toward the robot.
-WALL_FOLLOW_CORNER_CLOSE_MM = 330.0
 
 # Extra turning power for corners.
-WALL_FOLLOW_CORNER_TURN = 0.45
 
 # -------------------------------------------------
 # Greeter FSM / navigation tuning
