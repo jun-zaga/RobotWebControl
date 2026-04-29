@@ -15,12 +15,38 @@ class RobotService:
     def is_number(x):
         return isinstance(x, (int, float)) and not isinstance(x, bool)
 
-    def drive(self, left, right):
+    def drive(self, left, right, bypass_safety=False):
         if not (self.is_number(left) and self.is_number(right)):
             raise ValueError("left and right must be numbers")
 
         l = float(self.clamp(float(left) * DRIVE_GAIN, -1.0, 1.0))
         r = float(self.clamp(float(right) * DRIVE_GAIN, -1.0, 1.0))
+
+        if bypass_safety:
+            safety = {
+                "status": "bypassed",
+                "mode": "bypassed",
+                "front_min_mm": None,
+                "rear_min_mm": None,
+                "stale": False,
+            }
+
+            print(
+                f"[DRIVE] req=({l:.2f},{r:.2f}) safety=bypassed",
+                flush=True,
+            )
+
+            self.rc.drive(l, r)
+
+            if self.safety is not None:
+                self.safety.update_last_cmd_ts()
+
+            return {
+                "ok": True,
+                "l": l,
+                "r": r,
+                "safety": safety,
+            }
 
         safe_l, safe_r, safety = self.lidar.apply_safety(l, r)
 
@@ -32,8 +58,16 @@ class RobotService:
         )
 
         self.rc.drive(safe_l, safe_r)
-        self.safety.update_last_cmd_ts()
-        return {"ok": True, "l": safe_l, "r": safe_r, "safety": safety}
+
+        if self.safety is not None:
+            self.safety.update_last_cmd_ts()
+
+        return {
+            "ok": True,
+            "l": safe_l,
+            "r": safe_r,
+            "safety": safety,
+        }
 
     def stop(self):
         self.rc.stop()

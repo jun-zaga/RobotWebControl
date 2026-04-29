@@ -53,80 +53,70 @@ TTS_DEFAULT_VOL = 1.0
 # Everything else stays fixed here.
 # -------------------------------------------------
 
+# -------------------------------------------------
+# Wall follower tuning
+# -------------------------------------------------
+# -------------------------------------------------
+# Wall follower tuning
+# -------------------------------------------------
+
 WALL_FOLLOW_DEFAULT_SIDE = "left"
 
-# Distance behavior
-
-WALL_FOLLOW_TARGET_MM = 170
-WALL_FOLLOW_TOLERANCE_MM = 25
-WALL_FOLLOW_WALL_LOST_MM = 700
-
-WALL_FOLLOW_BASE_SPEED = 0.9
-
-# Motion behavior
-WALL_FOLLOW_MIN_MOTOR_POWER = 0.80
-WALL_FOLLOW_MAX_TURN = 0.20
-WALL_FOLLOW_TURN_GAIN = .8
-WALL_FOLLOW_SEARCH_TURN = 0.45
-WALL_FOLLOW_FRONT_STOP_MM = 300
-
-# Loop / correction behavior
-WALL_FOLLOW_LOOP_HZ = 12
-WALL_FOLLOW_FORWARD_SIGN = -1
-WALL_FOLLOW_TURN_SIGN = 1
-
-# Optional body offsets / motor floor
-WALL_FOLLOW_LEFT_BODY_OFFSET_MM = 0
-WALL_FOLLOW_RIGHT_BODY_OFFSET_MM = 0
-
-# Less aggressive than before.
-WALL_FOLLOW_BASE_SPEED = 1.50
-WALL_FOLLOW_MIN_MOTOR_POWER = 0.65
-WALL_FOLLOW_MAX_TURN = 0.18
-WALL_FOLLOW_TURN_GAIN = 0.40
-WALL_FOLLOW_SEARCH_TURN = 0.16
-
-# Deadband to prevent twitching.
+# Distance from wall.
+WALL_FOLLOW_TARGET_MM = 170.0
 WALL_FOLLOW_TOLERANCE_MM = 45.0
 
-# Minimum wheel command that overcomes static friction.
-
-# Control loop frequency.
-WALL_FOLLOW_LOOP_HZ = 12.0
-
-# If side distance is larger than this, assume wall is lost.
+# If side distance is bigger than this, wall is considered lost.
 WALL_FOLLOW_WALL_LOST_MM = 900.0
 
+# Your robot uses negative command as forward.
+WALL_FOLLOW_FORWARD_SIGN = -1.0
+
+# Drive power.
+WALL_FOLLOW_BASE_SPEED = 0.55
+
+# Steering correction.
+WALL_FOLLOW_TURN_GAIN = 0.65
+WALL_FOLLOW_MAX_TURN = 0.22
+WALL_FOLLOW_SEARCH_TURN = 0.35
+
+# Front obstacle distance.
+WALL_FOLLOW_FRONT_STOP_MM = 300.0
+
+# Control loop speed.
+WALL_FOLLOW_LOOP_HZ = 12.0
 
 # -------------------------------------------------
 # Wall follow LiDAR zones
-#
-# These match your current wall_follow.py:
-#   front      = 270 degrees
-#   left side  = 180 degrees
-#   right side = 0 degrees
+# LiDAR is physically rotated 90 degrees left.
 # -------------------------------------------------
 
-WALL_FOLLOW_FRONT_CENTER_DEG = LIDAR_FRONT_CENTER_DEG
+WALL_FOLLOW_FRONT_CENTER_DEG = 180.0
 WALL_FOLLOW_FRONT_HALF_ANGLE_DEG = 20.0
 
-WALL_FOLLOW_LEFT_CENTER_DEG = 225.0
-WALL_FOLLOW_LEFT_HALF_ANGLE_DEG = 12.0
+WALL_FOLLOW_LEFT_CENTER_DEG = 135.0
+WALL_FOLLOW_LEFT_HALF_ANGLE_DEG = 18.0
 
-WALL_FOLLOW_FRONT_LEFT_CENTER_DEG = 245.0
-WALL_FOLLOW_FRONT_LEFT_HALF_ANGLE_DEG = 10.0
+WALL_FOLLOW_RIGHT_CENTER_DEG = 225.0
+WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG = 18.0
 
-WALL_FOLLOW_BACK_LEFT_CENTER_DEG = 205.0
-WALL_FOLLOW_BACK_LEFT_HALF_ANGLE_DEG = 10.0
+# Corner/lookahead zones.
+# These help the robot turn with a corner instead of driving straight past it.
 
-WALL_FOLLOW_RIGHT_CENTER_DEG = 315.0
-WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG = 12.0
+WALL_FOLLOW_FRONT_LEFT_CENTER_DEG = 157.5
+WALL_FOLLOW_FRONT_LEFT_HALF_ANGLE_DEG = 15.0
 
-WALL_FOLLOW_FRONT_RIGHT_CENTER_DEG = 295.0
-WALL_FOLLOW_FRONT_RIGHT_HALF_ANGLE_DEG = 10.0
+WALL_FOLLOW_FRONT_RIGHT_CENTER_DEG = 202.5
+WALL_FOLLOW_FRONT_RIGHT_HALF_ANGLE_DEG = 15.0
 
-WALL_FOLLOW_BACK_RIGHT_CENTER_DEG = 335.0
-WALL_FOLLOW_BACK_RIGHT_HALF_ANGLE_DEG = 10.0
+# If the front-side opens up, the wall is turning away.
+WALL_FOLLOW_CORNER_OPEN_MM = 700.0
+
+# If the front-side gets close, the wall/corner is coming toward the robot.
+WALL_FOLLOW_CORNER_CLOSE_MM = 330.0
+
+# Extra turning power for corners.
+WALL_FOLLOW_CORNER_TURN = 0.45
 
 # -------------------------------------------------
 # Greeter FSM / navigation tuning
