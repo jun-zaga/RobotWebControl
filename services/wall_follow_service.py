@@ -551,73 +551,7 @@ class WallFollowService:
                     )
                     return
 
-        # Normal following.
-                # Parallel alignment:
-        # If front-side distance is much different than side distance,
-        # the robot is angled toward/away from the wall.
-        ANGLE_DIFF_MM = 90.0
-        ALIGN_TURN = 0.22
-
-        if front_side_mm is not None and corrected_side_mm is not None:
-            angle_error = front_side_mm - corrected_side_mm
-
-            if side == "right":
-                if angle_error < -ANGLE_DIFF_MM:
-                    # Nose is closer to right wall than body -> steer left / away.
-                    left = -0.65
-                    right = -0.95
-                    self._drive_and_record(
-                        left,
-                        right,
-                        "aligning_right",
-                        "nose angled into right wall; steering left to become parallel",
-                        error_mm,
-                        zones,
-                    )
-                    return
-
-                if angle_error > ANGLE_DIFF_MM:
-                    # Nose is farther from right wall than body -> steer right.
-                    left = -0.95
-                    right = -0.65
-                    self._drive_and_record(
-                        left,
-                        right,
-                        "aligning_right",
-                        "nose angled away from right wall; steering right to become parallel",
-                        error_mm,
-                        zones,
-                    )
-                    return
-
-            else:
-                if angle_error < -ANGLE_DIFF_MM:
-                    # Nose is closer to left wall than body -> steer right / away.
-                    left = -0.95
-                    right = -0.65
-                    self._drive_and_record(
-                        left,
-                        right,
-                        "aligning_left",
-                        "nose angled into left wall; steering right to become parallel",
-                        error_mm,
-                        zones,
-                    )
-                    return
-
-                if angle_error > ANGLE_DIFF_MM:
-                    # Nose is farther from left wall than body -> steer left.
-                    left = -0.65
-                    right = -0.95
-                    self._drive_and_record(
-                        left,
-                        right,
-                        "aligning_left",
-                        "nose angled away from left wall; steering left to become parallel",
-                        error_mm,
-                        zones,
-                    )
-                    return
+        
         
         if abs(error_mm) <= tolerance_mm:
             left_power = base_speed
