@@ -11,6 +11,7 @@ from config import (
     LIDAR_FRONT_STOP_MM,
     LIDAR_REAR_STOP_MM,
     LIDAR_STALE_SEC,
+    LIDAR_IGNORE_BELOW_MM,
 )
 
 try:
@@ -66,13 +67,34 @@ class LidarService:
             return None
 
         best = None
-        for angle, distance in points:
+
+        for point in points:
+            # Accept either:
+            #   (angle, distance)
+            # or:
+            #   (quality, angle, distance)
+            if len(point) == 2:
+                angle, distance = point
+            elif len(point) == 3:
+                _, angle, distance = point
+            else:
+                continue
+
+            if distance is None or distance <= 0:
+                continue
+
+            if distance < LIDAR_IGNORE_BELOW_MM:
+                continue
+
             if abs(self.angle_diff_deg(angle, center_deg)) > half_angle_deg:
                 continue
+
             if max_distance_mm is not None and distance > max_distance_mm:
                 continue
+
             if best is None or distance < best:
                 best = distance
+
         return best
 
     def get_status(self):
@@ -100,6 +122,7 @@ class LidarService:
                 "rear_zone_half_angle_deg": LIDAR_REAR_ZONE_HALF_ANGLE_DEG,
                 "front_stop_mm": LIDAR_FRONT_STOP_MM,
                 "rear_stop_mm": LIDAR_REAR_STOP_MM,
+                "ignore_below_mm": LIDAR_IGNORE_BELOW_MM,
                 "block_hold_sec": self.BLOCK_HOLD_SEC,
                 "block_confirm_scans": self.BLOCK_CONFIRM_SCANS,
             }
@@ -133,9 +156,7 @@ class LidarService:
         safe_left = float(left)
         safe_right = float(right)
 
-        # Only treat it as forward/reverse if BOTH wheels request that direction.
-        # If wheels are opposite signs, it is a pivot turn and should not be blocked
-        # by front/rear safety.
+        # Negative command is forward on your robot.
         forward_req = left < 0 and right < 0
         reverse_req = left > 0 and right > 0
 
@@ -181,6 +202,7 @@ class LidarService:
 
         while True:
             lidar = None
+
             try:
                 with self._lock:
                     self._status = "connecting"
@@ -191,14 +213,31 @@ class LidarService:
 
                 time.sleep(1.0)
 
-                info = lidar.get_info()
-                self.log(f"info={info}")
+                try:
+                    info = lidar.get_info()
+                    self.log(f"info={info}")
+                except Exception as e:
+                    self.log(f"info unavailable: {e}")
 
-                health = lidar.get_health()
-                self.log(f"health={health}")
+                try:
+                    health = lidar.get_health()
+                    self.log(f"health={health}")
+                except Exception as e:
+                    self.log(f"health unavailable: {e}")
 
-                lidar.clean_input()
-                self.log("input cleaned")
+                try:
+                    lidar.clean_input()
+                    self.log("input cleaned")
+                except Exception as e:
+                    self.log(f"clean_input failed: {repr(e)}")
+
+                try:
+                    lidar.start_motor()
+                    self.log("motor started")
+                except Exception as e:
+                    self.log(f"start_motor failed: {repr(e)}")
+
+                time.sleep(1.0)
 
                 with self._lock:
                     self._lidar = lidar
@@ -223,17 +262,31 @@ class LidarService:
                         if distance is None or distance <= 0:
                             continue
 
+                        if distance < LIDAR_IGNORE_BELOW_MM:
+                            continue
+
                         valid_points += 1
-                        scan_points.append((float(angle), float(distance)))
+
+                        angle = float(angle)
+                        distance = float(distance)
+
+                        # Store only angle + distance so get_zone_min() is stable.
+                        scan_points.append((angle, distance))
 
                         if any_min is None or distance < any_min:
                             any_min = distance
 
-                        if abs(self.angle_diff_deg(angle, LIDAR_FRONT_CENTER_DEG)) <= LIDAR_FRONT_ZONE_HALF_ANGLE_DEG:
+                        if (
+                            abs(self.angle_diff_deg(angle, LIDAR_FRONT_CENTER_DEG))
+                            <= LIDAR_FRONT_ZONE_HALF_ANGLE_DEG
+                        ):
                             if front_min is None or distance < front_min:
                                 front_min = distance
 
-                        if abs(self.angle_diff_deg(angle, LIDAR_REAR_CENTER_DEG)) <= LIDAR_REAR_ZONE_HALF_ANGLE_DEG:
+                        if (
+                            abs(self.angle_diff_deg(angle, LIDAR_REAR_CENTER_DEG))
+                            <= LIDAR_REAR_ZONE_HALF_ANGLE_DEG
+                        ):
                             if rear_min is None or distance < rear_min:
                                 rear_min = distance
 
@@ -250,6 +303,7 @@ class LidarService:
                         if front_min is not None and front_min <= LIDAR_FRONT_STOP_MM:
                             self._front_block_count += 1
                             self._last_close_front_mm = front_min
+
                             if self._front_block_count >= self.BLOCK_CONFIRM_SCANS:
                                 self._front_blocked_until = now + self.BLOCK_HOLD_SEC
                         else:
@@ -262,6 +316,7 @@ class LidarService:
                         ):
                             self._rear_block_count += 1
                             self._last_close_rear_mm = rear_min
+
                             if self._rear_block_count >= self.BLOCK_CONFIRM_SCANS:
                                 self._rear_blocked_until = now + self.BLOCK_HOLD_SEC
                         else:
@@ -280,6 +335,7 @@ class LidarService:
                 self.log(f"ERROR: {repr(e)}")
 
                 now = time.time()
+
                 with self._lock:
                     self._status = f"error: {e}"
                     self._front_min_mm = None
@@ -288,19 +344,27 @@ class LidarService:
                     self._last_ts = 0.0
                     self._lidar = None
                     self._last_scan_points = []
+                    self._front_block_count = 0
+                    self._rear_block_count = 0
 
-                    if self._last_close_front_mm is not None and self._last_close_front_mm <= LIDAR_FRONT_STOP_MM:
-                        self._front_blocked_until = max(self._front_blocked_until, now + self.BLOCK_HOLD_SEC)
+                    if (
+                        self._last_close_front_mm is not None
+                        and self._last_close_front_mm <= LIDAR_FRONT_STOP_MM
+                    ):
+                        self._front_blocked_until = max(
+                            self._front_blocked_until,
+                            now + self.BLOCK_HOLD_SEC,
+                        )
 
                     if (
                         LIDAR_REAR_STOP_MM > 0
                         and self._last_close_rear_mm is not None
                         and self._last_close_rear_mm <= LIDAR_REAR_STOP_MM
                     ):
-                        self._rear_blocked_until = max(self._rear_blocked_until, now + self.BLOCK_HOLD_SEC)
-
-                    self._front_block_count = 0
-                    self._rear_block_count = 0
+                        self._rear_blocked_until = max(
+                            self._rear_blocked_until,
+                            now + self.BLOCK_HOLD_SEC,
+                        )
 
                 try:
                     if lidar is not None:

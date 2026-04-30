@@ -4,6 +4,8 @@ import time
 from config import (
     WALL_FOLLOW_DEFAULT_SIDE,
     WALL_FOLLOW_TARGET_MM,
+    WALL_FOLLOW_TARGET_LEFT_MM,
+    WALL_FOLLOW_TARGET_RIGHT_MM,
     WALL_FOLLOW_TOLERANCE_MM,
     WALL_FOLLOW_WALL_LOST_MM,
     WALL_FOLLOW_BASE_SPEED,
@@ -11,6 +13,7 @@ from config import (
     WALL_FOLLOW_MAX_TURN,
     WALL_FOLLOW_SEARCH_TURN,
     WALL_FOLLOW_FRONT_STOP_MM,
+    WALL_FOLLOW_FRONT_SIDE_DANGER_MM,
     WALL_FOLLOW_LOOP_HZ,
     WALL_FOLLOW_FORWARD_SIGN,
     WALL_FOLLOW_FRONT_CENTER_DEG,
@@ -25,19 +28,21 @@ from config import (
     WALL_FOLLOW_FRONT_RIGHT_HALF_ANGLE_DEG,
     WALL_FOLLOW_CORNER_OPEN_MM,
     WALL_FOLLOW_CORNER_CLOSE_MM,
-    WALL_FOLLOW_CORNER_TURN,
+    WALL_FOLLOW_LEFT_BODY_OFFSET_MM,
+    WALL_FOLLOW_RIGHT_BODY_OFFSET_MM,
 )
 
 
 class WallFollowService:
     """
-    Simple autonomous wall follower.
+    Wall follower using tank-style left/right commands.
 
-    Behavior:
-    1. If front obstacle is close: pivot left.
-    2. If wall is too close: steer away.
-    3. If wall is too far: steer toward it.
-    4. If wall is lost: gently search toward chosen wall side.
+    Movement idea:
+      - Normal follow uses gentle steering.
+      - If followed wall disappears/falls far away:
+          right wall -> right wheel anchors, left wheel drives
+          left wall  -> left wheel anchors, right wheel drives
+      - Safety is NOT bypassed.
     """
 
     def __init__(self, robot_service, lidar_service):
@@ -52,6 +57,9 @@ class WallFollowService:
         self._side = WALL_FOLLOW_DEFAULT_SIDE
 
         self._target_mm = float(WALL_FOLLOW_TARGET_MM)
+        self._target_left_mm = float(WALL_FOLLOW_TARGET_LEFT_MM)
+        self._target_right_mm = float(WALL_FOLLOW_TARGET_RIGHT_MM)
+
         self._tolerance_mm = float(WALL_FOLLOW_TOLERANCE_MM)
         self._wall_lost_mm = float(WALL_FOLLOW_WALL_LOST_MM)
         self._base_speed = float(WALL_FOLLOW_BASE_SPEED)
@@ -59,8 +67,12 @@ class WallFollowService:
         self._max_turn = float(WALL_FOLLOW_MAX_TURN)
         self._search_turn = float(WALL_FOLLOW_SEARCH_TURN)
         self._front_stop_mm = float(WALL_FOLLOW_FRONT_STOP_MM)
+        self._front_side_danger_mm = float(WALL_FOLLOW_FRONT_SIDE_DANGER_MM)
         self._loop_hz = float(WALL_FOLLOW_LOOP_HZ)
         self._forward_sign = float(WALL_FOLLOW_FORWARD_SIGN)
+
+        self._left_body_offset_mm = float(WALL_FOLLOW_LEFT_BODY_OFFSET_MM)
+        self._right_body_offset_mm = float(WALL_FOLLOW_RIGHT_BODY_OFFSET_MM)
 
         self._last_state = "idle"
         self._last_reason = "idle"
@@ -73,6 +85,7 @@ class WallFollowService:
         with self._lock:
             if self._started:
                 return
+
             self._started = True
             self._thread = threading.Thread(target=self._loop, daemon=True)
             self._thread.start()
@@ -117,25 +130,44 @@ class WallFollowService:
 
     def get_status(self):
         with self._lock:
+            active_target = (
+                self._target_left_mm
+                if self._side == "left"
+                else self._target_right_mm
+            )
+
             return {
                 "ok": True,
                 "enabled": self._enabled,
                 "side": self._side,
                 "state": self._last_state,
                 "reason": self._last_reason,
-                "target_mm": self._target_mm,
+
+                "target_mm": active_target,
+                "target_fallback_mm": self._target_mm,
+                "target_left_mm": self._target_left_mm,
+                "target_right_mm": self._target_right_mm,
+
                 "tolerance_mm": self._tolerance_mm,
                 "wall_lost_mm": self._wall_lost_mm,
                 "front_stop_mm": self._front_stop_mm,
+                "front_side_danger_mm": self._front_side_danger_mm,
+
                 "base_speed": self._base_speed,
                 "turn_gain": self._turn_gain,
                 "max_turn": self._max_turn,
                 "search_turn": self._search_turn,
+
+                "left_body_offset_mm": self._left_body_offset_mm,
+                "right_body_offset_mm": self._right_body_offset_mm,
+
                 "last_error_mm": self._last_error_mm,
                 "last_cmd": dict(self._last_cmd),
                 "last_zone_snapshot": dict(self._last_zones),
+
                 "front_mm": self._last_zones.get("front_mm"),
                 "side_mm": self._last_zones.get("side_mm"),
+                "corrected_side_mm": self._last_zones.get("corrected_side_mm"),
                 "last_update_ts": self._last_update_ts,
             }
 
@@ -169,6 +201,15 @@ class WallFollowService:
             return None
 
         return value
+
+    def _correct_side_distance(self, side, side_mm):
+        if side_mm is None:
+            return None
+
+        if side == "left":
+            return side_mm - self._left_body_offset_mm
+
+        return side_mm - self._right_body_offset_mm
 
     def _get_zones(self):
         with self._lock:
@@ -206,6 +247,8 @@ class WallFollowService:
             side_mm = right_mm
             front_side_mm = front_right_mm
 
+        corrected_side_mm = self._correct_side_distance(side, side_mm)
+
         scan_age = None
         try:
             scan_age = self.lidar.get_status().get("last_scan_age_sec")
@@ -215,6 +258,7 @@ class WallFollowService:
         return {
             "front_mm": front_mm,
             "side_mm": side_mm,
+            "corrected_side_mm": corrected_side_mm,
             "left_mm": left_mm,
             "right_mm": right_mm,
             "front_left_mm": front_left_mm,
@@ -231,7 +275,8 @@ class WallFollowService:
         left = self._clamp(left, -1.0, 1.0)
         right = self._clamp(right, -1.0, 1.0)
 
-        response = self.robot.drive(left, right, bypass_safety=True)
+        # Safety is NOT bypassed.
+        response = self.robot.drive(left, right, bypass_safety=False)
 
         actual_left = response.get("l", left)
         actual_right = response.get("r", right)
@@ -253,57 +298,175 @@ class WallFollowService:
             f"cmd=({left:.2f},{right:.2f}) "
             f"front={zones.get('front_mm')} "
             f"side={zones.get('side_mm')} "
+            f"corrected_side={zones.get('corrected_side_mm')} "
             f"error={error_mm} "
-            f"reason={reason}",
+            f"reason={reason} "
+            f"safety={safety.get('mode')}",
             flush=True,
         )
 
     def _pivot_left(self, power):
-        # Your robot uses negative wheel command as forward.
-        # Left reverse + right forward = pivot left.
+        # left backward, right forward
         return power, -power
 
     def _pivot_right(self, power):
+        # left forward, right backward
         return -power, power
+
+    def _anchor_right_turn(self):
+        # Right wall missing/opening:
+        # right wheel anchors/slows, left wheel drives forward.
+        return -1.0, -0.10
+
+    def _anchor_left_turn(self):
+        # Left wall missing/opening:
+        # left wheel anchors/slows, right wheel drives forward.
+        return -0.10, -1.0
 
     def _step(self):
         with self._lock:
             side = self._side
-            target_mm = self._target_mm
+
+            if side == "left":
+                target_mm = self._target_left_mm
+            elif side == "right":
+                target_mm = self._target_right_mm
+            else:
+                target_mm = self._target_mm
+
             tolerance_mm = self._tolerance_mm
             wall_lost_mm = self._wall_lost_mm
             front_stop_mm = self._front_stop_mm
+            front_side_danger_mm = self._front_side_danger_mm
+
             base_speed = abs(self._base_speed)
             turn_gain = self._turn_gain
             max_turn = abs(self._max_turn)
-            search_turn = abs(self._search_turn)
-            forward_sign = self._forward_sign
 
         zones = self._get_zones()
         front_mm = zones.get("front_mm")
         side_mm = zones.get("side_mm")
+        corrected_side_mm = zones.get("corrected_side_mm")
+        front_side_mm = zones.get("front_side_mm")
 
-        # Case 1: obstacle in front.
+        # True front obstacle: hard pivot away.
         if front_mm is not None and front_mm <= front_stop_mm:
-            left, right = self._pivot_left(max(search_turn, 0.35))
+            pivot_power = 1.0
+
+            if side == "right":
+                left, right = self._pivot_left(pivot_power)
+            else:
+                left, right = self._pivot_right(pivot_power)
+
             self._drive_and_record(
                 left,
                 right,
                 "front_blocked",
-                "front obstacle close; pivoting left",
+                "front obstacle close; hard pivoting away",
                 None,
                 zones,
             )
             return
 
-        # Case 4: wall lost.
-        if side_mm is None or side_mm > wall_lost_mm:
-            if side == "left":
-                left, right = self._pivot_left(search_turn)
-                reason = "left wall lost; searching left"
+        # Front-side danger: soft steer unless extremely close.
+        if front_side_mm is not None and front_side_mm <= front_side_danger_mm:
+            if front_side_mm <= 320:
+                pivot_power = 1.0
+
+                if side == "right":
+                    left, right = self._pivot_left(pivot_power)
+                    reason = "front-right very close; hard pivoting left"
+                else:
+                    left, right = self._pivot_right(pivot_power)
+                    reason = "front-left very close; hard pivoting right"
             else:
-                left, right = self._pivot_right(search_turn)
-                reason = "right wall lost; searching right"
+                if side == "right":
+                    left = -0.65
+                    right = -0.85
+                    reason = "front-right close; soft steering left"
+                else:
+                    left = -0.85
+                    right = -0.65
+                    reason = "front-left close; soft steering right"
+
+            self._drive_and_record(
+                left,
+                right,
+                "front_side_close",
+                reason,
+                None,
+                zones,
+            )
+            return
+
+        # Too close to followed wall: gentle recovery away.
+        if side == "right" and side_mm is not None and side_mm < target_mm - tolerance_mm:
+            left = -0.78
+            right = -0.85
+            self._drive_and_record(
+                left,
+                right,
+                "recovering_right",
+                "soft recovering away from right wall",
+                side_mm - target_mm,
+                zones,
+            )
+            return
+
+        if side == "left" and side_mm is not None and side_mm < target_mm - tolerance_mm:
+            left = -0.85
+            right = -0.78
+            self._drive_and_record(
+                left,
+                right,
+                "recovering_left",
+                "soft recovering away from left wall",
+                side_mm - target_mm,
+                zones,
+            )
+            return
+
+        # Wall completely invisible: stop instead of driving blind.
+        # Wall side cone missing:
+        # If the front-side cone still sees the wall/corner, keep anchor-turning.
+        # If both are missing, stop instead of driving blind.
+        if side_mm is None:
+            if front_side_mm is not None and front_side_mm < wall_lost_mm:
+                if side == "right":
+                    left, right = self._anchor_right_turn()
+                    reason = "right side missing but front-right visible; continuing anchor-right turn"
+                else:
+                    left, right = self._anchor_left_turn()
+                    reason = "left side missing but front-left visible; continuing anchor-left turn"
+
+                self._drive_and_record(
+                    left,
+                    right,
+                    "searching",
+                    reason,
+                    None,
+                    zones,
+                )
+                return
+
+            self._drive_and_record(
+                0.0,
+                0.0,
+                "wall_lost_stop",
+                f"{side} wall not visible; stopping instead of driving blind",
+                None,
+                zones,
+            )
+            return
+
+        # Wall far: pivot toward missing wall using that side as anchor.
+        if side_mm > wall_lost_mm:
+            if side == "right":
+                left, right = self._anchor_right_turn()
+                reason = "right wall far; anchor-right pivot to re-detect"
+            else:
+                left, right = self._anchor_left_turn()
+                reason = "left wall far; anchor-left pivot to re-detect"
 
             self._drive_and_record(
                 left,
@@ -315,154 +478,176 @@ class WallFollowService:
             )
             return
 
-        error_mm = side_mm - target_mm
+        if corrected_side_mm is None:
+            self._drive_and_record(
+                0.0,
+                0.0,
+                "no_side_distance",
+                "side distance unavailable; stopping",
+                None,
+                zones,
+            )
+            return
 
-        front_side_mm = zones.get("front_side_mm")
-
-        # Strong corner assist:
-        # When the front-side opens up, pivot instead of arc-turning.
-        if front_side_mm is not None:
-            if side == "left":
-                if front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM:
-                    left, right = self._pivot_left(WALL_FOLLOW_CORNER_TURN)
-                    self._drive_and_record(
-                        left,
-                        right,
-                        "corner_left",
-                        "front-left opened; pivoting left with corner",
-                        error_mm,
-                        zones,
-                    )
-                    return
-
-                if front_side_mm < WALL_FOLLOW_CORNER_CLOSE_MM:
-                    left, right = self._pivot_right(WALL_FOLLOW_CORNER_TURN)
-                    self._drive_and_record(
-                        left,
-                        right,
-                        "corner_right",
-                        "front-left close; pivoting right away from corner",
-                        error_mm,
-                        zones,
-                    )
-                    return
-
-            else:
-                if front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM and front_mm is not None and front_mm > 900:
-                    left, right = self._pivot_right(WALL_FOLLOW_CORNER_TURN)
-                    self._drive_and_record(
-                        left,
-                        right,
-                        "corner_right",
-                        "front-right opened; pivoting right with corner",
-                        error_mm,
-                        zones,
-                    )
-                    return
-
-                if front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM and front_mm is not None and front_mm > 900:
-                    left, right = self._pivot_right(WALL_FOLLOW_CORNER_TURN)
-                    self._drive_and_record(
-                        left,
-                        right,
-                        "corner_right",
-                        "front and front-right opened; pivoting right with corner",
-                        error_mm,
-                        zones,
-                    )
-                    return
-        corner_turn = abs(WALL_FOLLOW_CORNER_TURN)
+        error_mm = corrected_side_mm - target_mm
 
         # Corner assist:
-        # For left wall:
-        # - front-left opens up = wall is turning left, so turn left
-        # - front-left gets close = inside corner/obstacle, so turn right
-        #
-        # For right wall:
-        # - front-right opens up = wall is turning right, so turn right
-        # - front-right gets close = inside corner/obstacle, so turn left
-
+        # If the wall opens up ahead and we are safely far from the wall,
+        # anchor that side wheel and pivot toward the missing wall.
         if front_side_mm is not None:
             if side == "left":
-                if front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM:
+                if (
+                    front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM
+                    and corrected_side_mm > target_mm + 250.0
+                ):
+                    left, right = self._anchor_left_turn()
                     self._drive_and_record(
-                        forward_sign * (base_speed - corner_turn),
-                        forward_sign * (base_speed + corner_turn),
+                        left,
+                        right,
                         "corner_left",
-                        "front-left opened; turning left with corner",
+                        "front-left opened; anchor-left pivot to re-detect",
                         error_mm,
                         zones,
                     )
                     return
 
                 if front_side_mm < WALL_FOLLOW_CORNER_CLOSE_MM:
+                    left, right = -1.0, -0.50
                     self._drive_and_record(
-                        forward_sign * (base_speed + corner_turn),
-                        forward_sign * (base_speed - corner_turn),
+                        left,
+                        right,
                         "corner_right",
-                        "front-left close; steering right away from corner",
+                        "front-left close; soft right correction",
                         error_mm,
                         zones,
                     )
                     return
 
             else:
-                if front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM:
+                if (
+                    front_side_mm > WALL_FOLLOW_CORNER_OPEN_MM
+                    and corrected_side_mm > target_mm + 250.0
+                ):
+                    left, right = self._anchor_right_turn()
                     self._drive_and_record(
-                        forward_sign * (base_speed + corner_turn),
-                        forward_sign * (base_speed - corner_turn),
+                        left,
+                        right,
                         "corner_right",
-                        "front-right opened; turning right with corner",
+                        "front-right opened; anchor-right pivot to re-detect",
                         error_mm,
                         zones,
                     )
                     return
 
                 if front_side_mm < WALL_FOLLOW_CORNER_CLOSE_MM:
+                    left, right = -0.50, -1.0
                     self._drive_and_record(
-                        forward_sign * (base_speed - corner_turn),
-                        forward_sign * (base_speed + corner_turn),
+                        left,
+                        right,
                         "corner_left",
-                        "front-right close; steering left away from corner",
+                        "front-right close; soft left correction",
                         error_mm,
                         zones,
                     )
                     return
 
-        # Straight if inside tolerance.
+        # Normal following.
+                # Parallel alignment:
+        # If front-side distance is much different than side distance,
+        # the robot is angled toward/away from the wall.
+        ANGLE_DIFF_MM = 90.0
+        ALIGN_TURN = 0.22
+
+        if front_side_mm is not None and corrected_side_mm is not None:
+            angle_error = front_side_mm - corrected_side_mm
+
+            if side == "right":
+                if angle_error < -ANGLE_DIFF_MM:
+                    # Nose is closer to right wall than body -> steer left / away.
+                    left = -0.65
+                    right = -0.95
+                    self._drive_and_record(
+                        left,
+                        right,
+                        "aligning_right",
+                        "nose angled into right wall; steering left to become parallel",
+                        error_mm,
+                        zones,
+                    )
+                    return
+
+                if angle_error > ANGLE_DIFF_MM:
+                    # Nose is farther from right wall than body -> steer right.
+                    left = -0.95
+                    right = -0.65
+                    self._drive_and_record(
+                        left,
+                        right,
+                        "aligning_right",
+                        "nose angled away from right wall; steering right to become parallel",
+                        error_mm,
+                        zones,
+                    )
+                    return
+
+            else:
+                if angle_error < -ANGLE_DIFF_MM:
+                    # Nose is closer to left wall than body -> steer right / away.
+                    left = -0.95
+                    right = -0.65
+                    self._drive_and_record(
+                        left,
+                        right,
+                        "aligning_left",
+                        "nose angled into left wall; steering right to become parallel",
+                        error_mm,
+                        zones,
+                    )
+                    return
+
+                if angle_error > ANGLE_DIFF_MM:
+                    # Nose is farther from left wall than body -> steer left.
+                    left = -0.65
+                    right = -0.95
+                    self._drive_and_record(
+                        left,
+                        right,
+                        "aligning_left",
+                        "nose angled away from left wall; steering left to become parallel",
+                        error_mm,
+                        zones,
+                    )
+                    return
+        
         if abs(error_mm) <= tolerance_mm:
             left_power = base_speed
             right_power = base_speed
-            reason = "wall centered"
+            reason = "wall centered; stabilizing forward"
         else:
             turn = min(abs(error_mm) * turn_gain / 1000.0, max_turn)
 
             if side == "left":
                 if error_mm > 0:
-                    # Too far from left wall: steer left.
                     left_power = base_speed - turn
                     right_power = base_speed + turn
                     reason = "too far from left wall; steering left"
                 else:
-                    # Too close to left wall: steer right.
                     left_power = base_speed + turn
                     right_power = base_speed - turn
                     reason = "too close to left wall; steering right"
             else:
                 if error_mm > 0:
-                    # Too far from right wall: steer right.
                     left_power = base_speed + turn
                     right_power = base_speed - turn
                     reason = "too far from right wall; steering right"
                 else:
-                    # Too close to right wall: steer left.
                     left_power = base_speed - turn
                     right_power = base_speed + turn
                     reason = "too close to right wall; steering left"
 
         self._drive_and_record(
-            forward_sign * left_power,
-            forward_sign * right_power,
+            WALL_FOLLOW_FORWARD_SIGN * left_power,
+            WALL_FOLLOW_FORWARD_SIGN * right_power,
             "following",
             reason,
             error_mm,

@@ -6,6 +6,7 @@ servo = None
 if not USE_MOCK:
     try:
         from . import maestro
+
         servo = maestro.Controller()
         print("[HW] Maestro connected", flush=True)
     except Exception as e:
@@ -16,8 +17,38 @@ else:
     print("[ROBOT_MOCK=1] Hardware disabled", flush=True)
 
 
-LEFT_WHEEL = 0
-RIGHT_WHEEL = 1
+# -------------------------------------------------
+# Drive channels
+# -------------------------------------------------
+# Your channel test showed:
+#   channel 0 = TURN / steering mixer
+#   channel 1 = DRIVE / throttle mixer
+#
+# channel 0 @ 5200 -> left forward, right backward
+# channel 0 @ 6800 -> left backward, right forward
+# channel 1 @ 5200 -> both forward
+# channel 1 @ 6800 -> both backward
+
+TURN_CHANNEL = 0
+DRIVE_CHANNEL = 1
+
+TURN_CENTER = 6000
+DRIVE_CENTER = 6000
+
+TURN_RANGE = 1300
+DRIVE_RANGE = 1300
+
+TURN_INVERT = False
+DRIVE_INVERT = False
+
+TURN_MIN_POWER = 0.35
+DRIVE_MIN_POWER = 0.35
+
+
+# -------------------------------------------------
+# Servo channels
+# -------------------------------------------------
+
 WAIST = 2
 HEAD_TILT = 3
 HEAD_PAN = 4
@@ -25,29 +56,12 @@ HEAD_PAN = 4
 LEFT_ARM_CHANNELS = [5, 6, 7, 8, 9, 10]
 RIGHT_ARM_CHANNELS = [11, 12, 13, 14, 15, 16]
 
-# Continuous servo calibration.
-# 6000 = neutral/stop on Maestro target units.
-# Negative command should move BOTH drive wheels forward on your robot.
-LEFT_WHEEL_CENTER = 6000
-RIGHT_WHEEL_CENTER = 6000
-
-# Right wheel gets extra pulse range because it has been anchoring/stalling under load.
-LEFT_WHEEL_RANGE = 250
-RIGHT_WHEEL_RANGE = 1000
-
 PAN_MIN, PAN_MAX = 4500, 7500
 TILT_MIN, TILT_MAX = 4700, 7300
 WAIST_MIN, WAIST_MAX = 4600, 7400
 
 ARM_CENTER = 5900
 ARM_HALF_RANGE = 1600
-
-# Direction-specific gains after command sign is known.
-# Based on your tests, negative is forward for both wheels.
-LEFT_FWD_GAIN = 1.00
-LEFT_REV_GAIN = 1.00
-RIGHT_FWD_GAIN = 1.00
-RIGHT_REV_GAIN = 1.00
 
 LEFT_INV = {1: True, 3: True}
 RIGHT_INV = {1: True, 3: True}
@@ -60,6 +74,7 @@ RAISE_R = [0.00, 0.50, 0.95, 0.50, 0.50, 0.50]
 
 HANDS_OPEN_L = [0.50, 0.50, 0.50, 0.50, 0.50, 0.05]
 HANDS_OPEN_R = [0.50, 0.50, 0.50, 0.50, 0.50, 0.05]
+
 HANDS_CLOSE_L = [0.50, 0.50, 0.50, 0.50, 0.50, 0.95]
 HANDS_CLOSE_R = [0.50, 0.50, 0.50, 0.50, 0.50, 0.95]
 
@@ -72,6 +87,10 @@ POSES = {
 }
 
 
+# -------------------------------------------------
+# Helpers
+# -------------------------------------------------
+
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
@@ -81,9 +100,25 @@ def norm_to_range(n01, lo, hi):
     return int(lo + n01 * (hi - lo))
 
 
-def wheel_target(n, center, wheel_range):
-    n = clamp(float(n), -1.0, 1.0)
-    return int(center + n * wheel_range)
+def apply_min_power(x, min_power):
+    x = clamp(float(x), -1.0, 1.0)
+
+    if abs(x) < 0.02:
+        return 0.0
+
+    if abs(x) < min_power:
+        return min_power if x > 0 else -min_power
+
+    return x
+
+
+def target_from_power(power, center, pulse_range, invert=False):
+    power = clamp(float(power), -1.0, 1.0)
+
+    if invert:
+        power = -power
+
+    return int(center + power * pulse_range)
 
 
 def arm_target(pos01):
@@ -92,103 +127,203 @@ def arm_target(pos01):
 
 
 def _set_target(ch, target, label):
+    target = int(target)
+
     if servo is None:
         print(f"[MOCK:{label}] ch={ch} target={target}", flush=True)
         return
-    servo.setTarget(ch, int(target))
 
+    servo.setTarget(ch, target)
+
+
+# -------------------------------------------------
+# Drive
+# -------------------------------------------------
 
 def drive(l, r):
-    l = clamp(float(l), -1.0, 1.0)
-    r = clamp(float(r), -1.0, 1.0)
+    """
+    Tank input -> throttle/steering mixer output.
 
-    # Negative is forward for both wheels based on your wheel tests.
-    if l < 0:
-        l *= LEFT_FWD_GAIN
-    else:
-        l *= LEFT_REV_GAIN
+    Input convention:
+      l/r negative = forward
+      l/r positive = backward
 
-    if r < 0:
-        r *= RIGHT_FWD_GAIN
-    else:
-        r *= RIGHT_REV_GAIN
+    Hardware reality:
+      channel 0 = turn mixer
+      channel 1 = drive mixer
 
-    l = clamp(l, -1.0, 1.0)
-    r = clamp(r, -1.0, 1.0)
+    Examples:
+      drive(-0.5, -0.5) -> both forward
+      drive( 0.5,  0.5) -> both backward
+      drive(-0.5,  0.0) -> gentle right turn, left-side push
+      drive( 0.0, -0.5) -> gentle left turn, right-side push
+      drive( 0.5, -0.5) -> pivot one way
+      drive(-0.5,  0.5) -> pivot other way
+    """
+    raw_l = clamp(float(l), -1.0, 1.0)
+    raw_r = clamp(float(r), -1.0, 1.0)
 
-    left_target = wheel_target(l, LEFT_WHEEL_CENTER, LEFT_WHEEL_RANGE)
-    right_target = wheel_target(r, RIGHT_WHEEL_CENTER, RIGHT_WHEEL_RANGE)
+    # Mixer wiring swaps left/right behavior, so correct it here.
+    raw_l, raw_r = raw_r, raw_l
+
+    if abs(raw_l) < 0.05:
+        raw_l = 0.0
+    if abs(raw_r) < 0.05:
+        raw_r = 0.0
+
+    # Tank-to-mixer conversion.
+    drive_power = (raw_l + raw_r) / 2.0
+    turn_power = (raw_r - raw_l) / 2.0
+
+    drive_power = apply_min_power(drive_power, DRIVE_MIN_POWER)
+    turn_power = apply_min_power(turn_power, TURN_MIN_POWER)
+
+    drive_target = target_from_power(
+        drive_power,
+        DRIVE_CENTER,
+        DRIVE_RANGE,
+        DRIVE_INVERT,
+    )
+
+    turn_target = target_from_power(
+        turn_power,
+        TURN_CENTER,
+        TURN_RANGE,
+        TURN_INVERT,
+    )
 
     print(
-        f"[HW DRIVE] cmd=({l:.2f},{r:.2f}) "
-        f"targets=({left_target},{right_target})",
+        f"[HW DRIVE] tank=({raw_l:.2f},{raw_r:.2f}) "
+        f"mixed drive={drive_power:.2f} turn={turn_power:.2f} "
+        f"targets turn_ch{TURN_CHANNEL}={turn_target} "
+        f"drive_ch{DRIVE_CHANNEL}={drive_target}",
         flush=True,
     )
 
-    _set_target(LEFT_WHEEL, left_target, "left_wheel")
-    _set_target(RIGHT_WHEEL, right_target, "right_wheel")
+    _set_target(TURN_CHANNEL, turn_target, "turn_channel")
+    _set_target(DRIVE_CHANNEL, drive_target, "drive_channel")
+
+    return {
+        "ok": True,
+        "l": raw_l,
+        "r": raw_r,
+        "drive_power": drive_power,
+        "turn_power": turn_power,
+        "turn_target": turn_target,
+        "drive_target": drive_target,
+    }
 
 
 def stop():
-    _set_target(LEFT_WHEEL, LEFT_WHEEL_CENTER, "left_wheel_stop")
-    _set_target(RIGHT_WHEEL, RIGHT_WHEEL_CENTER, "right_wheel_stop")
+    _set_target(TURN_CHANNEL, TURN_CENTER, "turn_stop")
+    _set_target(DRIVE_CHANNEL, DRIVE_CENTER, "drive_stop")
 
+    return {
+        "ok": True,
+        "l": 0,
+        "r": 0,
+        "drive_power": 0,
+        "turn_power": 0,
+        "turn_target": TURN_CENTER,
+        "drive_target": DRIVE_CENTER,
+    }
+
+
+# -------------------------------------------------
+# Head / waist
+# -------------------------------------------------
 
 def head_pan(pos01):
-    _set_target(HEAD_PAN, norm_to_range(pos01, PAN_MIN, PAN_MAX), "head_pan")
+    target = norm_to_range(pos01, PAN_MIN, PAN_MAX)
+    _set_target(HEAD_PAN, target, "head_pan")
+    return {"ok": True, "channel": HEAD_PAN, "target": target}
 
 
 def head_tilt(pos01):
-    _set_target(HEAD_TILT, norm_to_range(pos01, TILT_MIN, TILT_MAX), "head_tilt")
+    target = norm_to_range(pos01, TILT_MIN, TILT_MAX)
+    _set_target(HEAD_TILT, target, "head_tilt")
+    return {"ok": True, "channel": HEAD_TILT, "target": target}
 
 
 def waist(pos01):
-    _set_target(WAIST, norm_to_range(pos01, WAIST_MIN, WAIST_MAX), "waist")
+    target = norm_to_range(pos01, WAIST_MIN, WAIST_MAX)
+    _set_target(WAIST, target, "waist")
+    return {"ok": True, "channel": WAIST, "target": target}
 
+
+# -------------------------------------------------
+# Arms
+# -------------------------------------------------
 
 def left_joint(i: int, pos01: float):
     if i < 1 or i > 6:
         raise ValueError("left_joint index must be 1..6")
+
     if LEFT_INV.get(i, False):
         pos01 = 1.0 - float(pos01)
+
     ch = LEFT_ARM_CHANNELS[i - 1]
     tgt = arm_target(pos01)
     _set_target(ch, tgt, f"left_j{i}")
+
+    return {"ok": True, "channel": ch, "target": tgt}
 
 
 def right_joint(i: int, pos01: float):
     if i < 1 or i > 6:
         raise ValueError("right_joint index must be 1..6")
+
     if RIGHT_INV.get(i, False):
         pos01 = 1.0 - float(pos01)
+
     ch = RIGHT_ARM_CHANNELS[i - 1]
     tgt = arm_target(pos01)
     _set_target(ch, tgt, f"right_j{i}")
 
+    return {"ok": True, "channel": ch, "target": tgt}
+
 
 def left_arm(vals):
+    results = []
+
     for i, v in enumerate(vals, start=1):
-        left_joint(i, v)
+        results.append(left_joint(i, v))
+
+    return {"ok": True, "results": results}
 
 
 def right_arm(vals):
+    results = []
+
     for i, v in enumerate(vals, start=1):
-        right_joint(i, v)
+        results.append(right_joint(i, v))
+
+    return {"ok": True, "results": results}
 
 
 def arms_neutral():
-    left_arm(NEUTRAL_L)
-    right_arm(NEUTRAL_R)
+    left = left_arm(NEUTRAL_L)
+    right = right_arm(NEUTRAL_R)
+
+    return {
+        "ok": True,
+        "left": left,
+        "right": right,
+    }
 
 
 def pose(name):
     p = POSES.get(name)
+
     if not p:
         return False
 
-    if p["left"] is not None:
-        left_arm(p["left"])
-    if p["right"] is not None:
-        right_arm(p["right"])
+    result = {"ok": True, "pose": name}
 
-    return p
+    if p["left"] is not None:
+        result["left"] = left_arm(p["left"])
+
+    if p["right"] is not None:
+        result["right"] = right_arm(p["right"])
+
+    return result
