@@ -5,6 +5,7 @@ import { initArms } from "./arms.js";
 import { initPoses } from "./poses.js";
 import { initDialog } from "./dialog.js";
 import { initWallFollow } from "./wall_follow.js";
+import { initGreeter } from "./greeter.js";
 
 initDebugUI();
 initDrive();
@@ -13,3 +14,4 @@ initHead();
 initArms();
 initPoses();
 initDialog();
+initGreeter();

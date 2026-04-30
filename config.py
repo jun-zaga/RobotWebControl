@@ -213,45 +213,36 @@ WALL_FOLLOW_OBSTACLE_BACKUP_SPEED = 0.45
 WALL_FOLLOW_OBSTACLE_PIVOT_POWER = 0.75
 
 # -------------------------------------------------
-# Greeter FSM / navigation tuning
-# currently unused
+# Final Project Greeter FSM
 # -------------------------------------------------
 
-# Distance for detecting a person in greeter/navigation mode.
-# GREETER_HUMAN_DETECT_MM = 900
+# Person detection distance in front of robot.
+GREETER_HUMAN_DETECT_MM = 1400.0
 
-# Distance where greeter/navigation mode treats the front as blocked.
-# GREETER_FRONT_OBSTACLE_MM = 450
+# Front stop distance during autonomous movement.
+GREETER_FRONT_OBSTACLE_MM = 650.0
 
-# Distance where greeter/navigation mode considers a wall visible.
-# GREETER_WALL_VISIBLE_MM = 1200
+# Side wall is considered visible if closer than this.
+GREETER_WALL_VISIBLE_MM = 1600.0
 
-# Distance where greeter/navigation mode considers an opening/hallway visible.
-# GREETER_OPENING_MM = 1600
+# Side is considered open if farther than this.
+GREETER_OPENING_MM = 1800.0
 
-# Time to rotate about 180 degrees in greeter/navigation mode.
-# GREETER_TURN_180_SEC = 1.8
+# Timed turn values. Tune these on floor.
+GREETER_TURN_180_SEC = 2.25
+GREETER_TURN_90_SEC = 1.12
 
-# Time to rotate about 90 degrees in greeter/navigation mode.
-# GREETER_TURN_90_SEC = 0.85
+# Final straight movement after intersection turn.
+GREETER_FINAL_FORWARD_SEC = 5.0
 
-# Time to drive forward at the end of a greeter/navigation routine.
-# GREETER_FINAL_FORWARD_SEC = 5.0
+# Driving speed during autonomous movement.
+GREETER_BASE_SPEED = 0.22
 
-# Base speed for greeter/navigation mode.
-# GREETER_BASE_SPEED = 0.22
+# Turning speed for timed turns.
+GREETER_TURN_SPEED = 0.30
 
-# Turning speed for greeter/navigation mode.
-# GREETER_TURN_SPEED = 0.25
+# Wall-follow proportional gain.
+GREETER_WALL_FOLLOW_KP = 0.00045
 
-# Steering correction strength for greeter/navigation wall following.
-# GREETER_WALL_FOLLOW_KP = 0.00035
-
-# Target side distance for greeter/navigation wall following.
-# GREETER_TARGET_SIDE_MM = 550
-
-# Distance range where greeter/navigation does not correct left/right.
-# GREETER_CENTER_DEADBAND_MM = 80
-
-# How often greeter/navigation status is checked.
-# GREETER_STATUS_POLL_SEC = 0.25
+# Desired side distance target.
+GREETER_TARGET_SIDE_MM = 850.0

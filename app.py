@@ -17,6 +17,8 @@ from services.robot_service import RobotService
 from services.safety_service import SafetyService
 from services.tts_service import TTSService
 from services.wall_follow_service import WallFollowService
+from services.greeter_service import GreeterService
+from routes.greeter_routes import create_greeter_blueprint
 
 
 def create_app():
@@ -51,6 +53,12 @@ def create_app():
         safety=safety,
     )
 
+    greeter = GreeterService(
+    robot_service=robot,
+    lidar_service=lidar,
+    tts_service=tts,
+)
+
     app.config["services"] = {
         "robot": robot,
         "dialog": dialog,
@@ -59,14 +67,14 @@ def create_app():
         "safety": safety,
         "runner": runner,
         "wall_follow": wall_follow,
-        # "greeter": greeter,
+        "greeter": greeter,
     }
 
     app.register_blueprint(create_robot_blueprint())
     app.register_blueprint(create_dialog_blueprint())
     app.register_blueprint(create_tts_blueprint())
     app.register_blueprint(create_system_blueprint())
-    # app.register_blueprint(create_greeter_blueprint())
+    app.register_blueprint(create_greeter_blueprint())
 
     safety.start()
     lidar.start()
