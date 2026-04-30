@@ -30,6 +30,12 @@ from config import (
     WALL_FOLLOW_CORNER_CLOSE_MM,
     WALL_FOLLOW_LEFT_BODY_OFFSET_MM,
     WALL_FOLLOW_RIGHT_BODY_OFFSET_MM,
+    WALL_FOLLOW_OBSTACLE_STOP_MM,
+    WALL_FOLLOW_OBSTACLE_STOP_SEC,
+    WALL_FOLLOW_OBSTACLE_BACKUP_SEC,
+    WALL_FOLLOW_OBSTACLE_PIVOT_SEC,
+    WALL_FOLLOW_OBSTACLE_BACKUP_SPEED,
+    WALL_FOLLOW_OBSTACLE_PIVOT_POWER,
 )
 
 
@@ -37,11 +43,11 @@ class WallFollowService:
     """
     Wall follower using tank-style left/right commands.
 
-    Movement idea:
-      - Normal follow uses gentle steering.
-      - If followed wall disappears/falls far away:
-          right wall -> right wheel anchors, left wheel drives
-          left wall  -> left wheel anchors, right wheel drives
+    Behavior:
+      - Normal wall follow stays gentle.
+      - Cornering uses anchor-wheel behavior.
+      - Obstacle handling is separate:
+          obstacle -> stop -> back up -> pivot away -> resume wall follow
       - Safety is NOT bypassed.
     """
 
@@ -81,6 +87,11 @@ class WallFollowService:
         self._last_zones = {}
         self._last_update_ts = 0.0
 
+        # Obstacle avoid state machine.
+        self._obstacle_mode = None
+        self._obstacle_until_ts = 0.0
+        self._obstacle_side = None
+
     def start(self):
         with self._lock:
             if self._started:
@@ -100,6 +111,10 @@ class WallFollowService:
             self._last_reason = "enabled"
             self._last_update_ts = time.time()
 
+            self._obstacle_mode = None
+            self._obstacle_until_ts = 0.0
+            self._obstacle_side = None
+
         return self.get_status()
 
     def disable(self, stop_robot=True, reason="disabled"):
@@ -110,6 +125,10 @@ class WallFollowService:
             self._last_reason = reason
             self._last_cmd = {"left": 0.0, "right": 0.0}
             self._last_update_ts = time.time()
+
+            self._obstacle_mode = None
+            self._obstacle_until_ts = 0.0
+            self._obstacle_side = None
 
         if was_enabled and stop_robot:
             self.robot.stop()
@@ -160,6 +179,9 @@ class WallFollowService:
 
                 "left_body_offset_mm": self._left_body_offset_mm,
                 "right_body_offset_mm": self._right_body_offset_mm,
+
+                "obstacle_mode": self._obstacle_mode,
+                "obstacle_until_ts": self._obstacle_until_ts,
 
                 "last_error_mm": self._last_error_mm,
                 "last_cmd": dict(self._last_cmd),
@@ -298,6 +320,7 @@ class WallFollowService:
             f"cmd=({left:.2f},{right:.2f}) "
             f"front={zones.get('front_mm')} "
             f"side={zones.get('side_mm')} "
+            f"front_side={zones.get('front_side_mm')} "
             f"corrected_side={zones.get('corrected_side_mm')} "
             f"error={error_mm} "
             f"reason={reason} "
@@ -322,6 +345,99 @@ class WallFollowService:
         # Left wall missing/opening:
         # left wheel anchors/slows, right wheel drives forward.
         return -0.10, -1.0
+
+    def _start_obstacle_avoid(self, side):
+        now = time.time()
+
+        with self._lock:
+            self._obstacle_mode = "stop"
+            self._obstacle_until_ts = now + WALL_FOLLOW_OBSTACLE_STOP_SEC
+            self._obstacle_side = side
+
+    def _run_obstacle_avoid(self, zones):
+        with self._lock:
+            mode = self._obstacle_mode
+            until_ts = self._obstacle_until_ts
+            side = self._obstacle_side
+
+        if mode is None:
+            return False
+
+        now = time.time()
+
+        # Move to next phase when time expires.
+        if now >= until_ts:
+            with self._lock:
+                if mode == "stop":
+                    self._obstacle_mode = "backup"
+                    self._obstacle_until_ts = now + WALL_FOLLOW_OBSTACLE_BACKUP_SEC
+                    mode = "backup"
+
+                elif mode == "backup":
+                    self._obstacle_mode = "pivot"
+                    self._obstacle_until_ts = now + WALL_FOLLOW_OBSTACLE_PIVOT_SEC
+                    mode = "pivot"
+
+                else:
+                    self._obstacle_mode = None
+                    self._obstacle_until_ts = 0.0
+                    self._obstacle_side = None
+
+                    self._drive_and_record(
+                        0.0,
+                        0.0,
+                        "obstacle_done",
+                        "obstacle avoid complete; resuming wall follow",
+                        None,
+                        zones,
+                    )
+                    return True
+
+        if mode == "stop":
+            self._drive_and_record(
+                0.0,
+                0.0,
+                "obstacle_stop",
+                "front obstacle detected; stopping before avoidance",
+                None,
+                zones,
+            )
+            return True
+
+        if mode == "backup":
+            # Positive is backward on your robot.
+            speed = abs(WALL_FOLLOW_OBSTACLE_BACKUP_SPEED)
+            self._drive_and_record(
+                speed,
+                speed,
+                "obstacle_backup",
+                "backing up from obstacle",
+                None,
+                zones,
+            )
+            return True
+
+        if mode == "pivot":
+            power = abs(WALL_FOLLOW_OBSTACLE_PIVOT_POWER)
+
+            if side == "right":
+                left, right = self._pivot_left(power)
+                reason = "pivoting left away from obstacle"
+            else:
+                left, right = self._pivot_right(power)
+                reason = "pivoting right away from obstacle"
+
+            self._drive_and_record(
+                left,
+                right,
+                "obstacle_pivot",
+                reason,
+                None,
+                zones,
+            )
+            return True
+
+        return False
 
     def _step(self):
         with self._lock:
@@ -349,45 +465,35 @@ class WallFollowService:
         corrected_side_mm = zones.get("corrected_side_mm")
         front_side_mm = zones.get("front_side_mm")
 
-        # True front obstacle: hard pivot away.
-        if front_mm is not None and front_mm <= front_stop_mm:
-            pivot_power = 1.0
+        # Finish obstacle sequence before normal wall following.
+        if self._run_obstacle_avoid(zones):
+            return
 
-            if side == "right":
-                left, right = self._pivot_left(pivot_power)
-            else:
-                left, right = self._pivot_right(pivot_power)
+        # True front obstacle:
+        # Use stop -> backup -> pivot -> resume instead of instant hard pivot.
+        if front_mm is not None and front_mm <= WALL_FOLLOW_OBSTACLE_STOP_MM:
+            self._start_obstacle_avoid(side)
 
             self._drive_and_record(
-                left,
-                right,
-                "front_blocked",
-                "front obstacle close; hard pivoting away",
+                0.0,
+                0.0,
+                "obstacle_stop",
+                "front obstacle detected; starting obstacle avoid",
                 None,
                 zones,
             )
             return
 
-        # Front-side danger: soft steer unless extremely close.
+        # Front-side danger: soft steer away.
         if front_side_mm is not None and front_side_mm <= front_side_danger_mm:
-            if front_side_mm <= 320:
-                pivot_power = 1.0
-
-                if side == "right":
-                    left, right = self._pivot_left(pivot_power)
-                    reason = "front-right very close; hard pivoting left"
-                else:
-                    left, right = self._pivot_right(pivot_power)
-                    reason = "front-left very close; hard pivoting right"
+            if side == "right":
+                left = -0.65
+                right = -0.85
+                reason = "front-right close; soft steering left"
             else:
-                if side == "right":
-                    left = -0.65
-                    right = -0.85
-                    reason = "front-right close; soft steering left"
-                else:
-                    left = -0.85
-                    right = -0.65
-                    reason = "front-left close; soft steering right"
+                left = -0.85
+                right = -0.65
+                reason = "front-left close; soft steering right"
 
             self._drive_and_record(
                 left,
@@ -426,7 +532,6 @@ class WallFollowService:
             )
             return
 
-        # Wall completely invisible: stop instead of driving blind.
         # Wall side cone missing:
         # If the front-side cone still sees the wall/corner, keep anchor-turning.
         # If both are missing, stop instead of driving blind.
@@ -551,8 +656,7 @@ class WallFollowService:
                     )
                     return
 
-        
-        
+        # Normal following.
         if abs(error_mm) <= tolerance_mm:
             left_power = base_speed
             right_power = base_speed

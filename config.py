@@ -191,6 +191,28 @@ WALL_FOLLOW_BACK_RIGHT_CENTER_DEG = 0.0
 WALL_FOLLOW_BACK_RIGHT_HALF_ANGLE_DEG = 10.0
 
 # -------------------------------------------------
+# Obstacle handling
+# -------------------------------------------------
+
+# Distance where a true front obstacle starts the avoid sequence.
+WALL_FOLLOW_OBSTACLE_STOP_MM = 500.0
+
+# How long to fully stop before reacting.
+WALL_FOLLOW_OBSTACLE_STOP_SEC = 0.25
+
+# How long to reverse away from the obstacle.
+WALL_FOLLOW_OBSTACLE_BACKUP_SEC = 0.40
+
+# How long to pivot away before resuming wall follow.
+WALL_FOLLOW_OBSTACLE_PIVOT_SEC = 0.45
+
+# Reverse speed during obstacle avoidance.
+WALL_FOLLOW_OBSTACLE_BACKUP_SPEED = 0.45
+
+# Pivot strength during obstacle avoidance.
+WALL_FOLLOW_OBSTACLE_PIVOT_POWER = 0.75
+
+# -------------------------------------------------
 # Greeter FSM / navigation tuning
 # currently unused
 # -------------------------------------------------
