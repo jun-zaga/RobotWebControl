@@ -7,19 +7,30 @@ from config import (
     GREETER_FRONT_OBSTACLE_MM,
     GREETER_WALL_VISIBLE_MM,
     GREETER_OPENING_MM,
-    GREETER_TURN_180_SEC,
-    GREETER_TURN_90_SEC,
     GREETER_FINAL_FORWARD_SEC,
     GREETER_BASE_SPEED,
     GREETER_TURN_SPEED,
     GREETER_WALL_FOLLOW_KP,
     GREETER_TARGET_SIDE_MM,
-    WALL_FOLLOW_FRONT_CENTER_DEG,
-    WALL_FOLLOW_LEFT_CENTER_DEG,
-    WALL_FOLLOW_RIGHT_CENTER_DEG,
-    WALL_FOLLOW_FRONT_HALF_ANGLE_DEG,
-    WALL_FOLLOW_LEFT_HALF_ANGLE_DEG,
-    WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG,
+    GREETER_FRONT_CENTER_DEG,
+    GREETER_FRONT_HALF_ANGLE_DEG,
+    GREETER_LEFT_CENTER_DEG,
+    GREETER_LEFT_HALF_ANGLE_DEG,
+    GREETER_RIGHT_CENTER_DEG,
+    GREETER_RIGHT_HALF_ANGLE_DEG,
+    WALL_FOLLOW_FORWARD_SIGN,
+    GREETER_TURN_TIMEOUT_SEC,
+    GREETER_TURN_MIN_SEC,
+    GREETER_TURN_FRONT_OPEN_MM,
+    GREETER_TURN_SIDE_WALL_MM,
+    GREETER_TURN_45_SEC,
+    GREETER_T_FAR_MM,
+    GREETER_T_FAR_TOLERANCE_MM,
+    GREETER_T_LEFT_MIN_MM,
+    GREETER_T_LEFT_MAX_MM,
+    GREETER_T_RIGHT_MIN_MM,
+    GREETER_T_RIGHT_MAX_MM,
+    GREETER_T_FAR_SEEN_REQUIRED,
 )
 
 try:
@@ -48,42 +59,13 @@ class Destination(str, enum.Enum):
 
 
 class GreeterService:
-    """
-    Final Project FSM.
+    FRONT_CENTER_DEG = GREETER_FRONT_CENTER_DEG
+    LEFT_CENTER_DEG = GREETER_LEFT_CENTER_DEG
+    RIGHT_CENTER_DEG = GREETER_RIGHT_CENTER_DEG
 
-    WAITING -> GREETING:
-        Human detected in front by LiDAR.
-
-    GREETING -> LISTENING:
-        Robot says hello.
-
-    LISTENING -> TURNING_AROUND:
-        Speech recognized as bathroom or robot lab.
-
-    TURNING_AROUND -> ALIGNING_TO_HALLWAY:
-        Timed 180 degree turn.
-
-    ALIGNING_TO_HALLWAY -> MOVING_TO_T:
-        Robot sees walls on both sides or timeout happens.
-
-    MOVING_TO_T -> TURNING_TO_DESTINATION:
-        Front wall is close and left/right openings are detected.
-
-    TURNING_TO_DESTINATION -> FINAL_MOVEMENT:
-        Bathroom = right turn.
-        Robot lab = left turn.
-
-    FINAL_MOVEMENT -> STOPPED:
-        Robot drives forward for final timed movement and announces arrival.
-    """
-
-    FRONT_CENTER_DEG = WALL_FOLLOW_FRONT_CENTER_DEG
-    LEFT_CENTER_DEG = WALL_FOLLOW_LEFT_CENTER_DEG
-    RIGHT_CENTER_DEG = WALL_FOLLOW_RIGHT_CENTER_DEG
-
-    FRONT_HALF_ANGLE_DEG = WALL_FOLLOW_FRONT_HALF_ANGLE_DEG
-    LEFT_HALF_ANGLE_DEG = WALL_FOLLOW_LEFT_HALF_ANGLE_DEG
-    RIGHT_HALF_ANGLE_DEG = WALL_FOLLOW_RIGHT_HALF_ANGLE_DEG
+    FRONT_HALF_ANGLE_DEG = GREETER_FRONT_HALF_ANGLE_DEG
+    LEFT_HALF_ANGLE_DEG = GREETER_LEFT_HALF_ANGLE_DEG
+    RIGHT_HALF_ANGLE_DEG = GREETER_RIGHT_HALF_ANGLE_DEG
 
     def __init__(self, robot_service, lidar_service, tts_service):
         self.robot = robot_service
@@ -105,14 +87,30 @@ class GreeterService:
         self.opening_mm = GREETER_OPENING_MM
 
         self.center_target_mm = GREETER_TARGET_SIDE_MM
-        self.wall_follow_base_speed = GREETER_BASE_SPEED
+        self.wall_follow_base_speed = GREETER_BASE_SPEED * WALL_FOLLOW_FORWARD_SIGN
         self.wall_follow_kp = GREETER_WALL_FOLLOW_KP
+
         self.turn_speed = GREETER_TURN_SPEED
-        self.turn_180_sec = GREETER_TURN_180_SEC
-        self.turn_90_sec = GREETER_TURN_90_SEC
+        self.turn_timeout_sec = GREETER_TURN_TIMEOUT_SEC
+        self.turn_min_sec = GREETER_TURN_MIN_SEC
+        self.turn_front_open_mm = GREETER_TURN_FRONT_OPEN_MM
+        self.turn_side_wall_mm = GREETER_TURN_SIDE_WALL_MM
+        self.turn_45_sec = GREETER_TURN_45_SEC
+
         self.final_move_sec = GREETER_FINAL_FORWARD_SEC
 
-        self.max_steer = 0.28
+        self.t_far_mm = GREETER_T_FAR_MM
+        self.t_far_tolerance_mm = GREETER_T_FAR_TOLERANCE_MM
+        self.t_left_min_mm = GREETER_T_LEFT_MIN_MM
+        self.t_left_max_mm = GREETER_T_LEFT_MAX_MM
+        self.t_right_min_mm = GREETER_T_RIGHT_MIN_MM
+        self.t_right_max_mm = GREETER_T_RIGHT_MAX_MM
+        self.t_far_seen_required = GREETER_T_FAR_SEEN_REQUIRED
+        self.t_far_seen_count = 0
+
+        # Keep small because Stuart drives at 0.80.
+        self.max_steer = 0.06
+
         self.align_timeout_sec = 5.0
         self.loop_hz = 10.0
 
@@ -130,13 +128,14 @@ class GreeterService:
             self._destination = None
             self._last_error = None
             self._last_heard = ""
+            self.t_far_seen_count = 0
             self._state_entered_at = time.time()
 
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
 
-            print("[GREETER] started", flush=True)
-            return self.status()
+        print("[GREETER] started", flush=True)
+        return self.status()
 
     def stop(self, reason="manual stop"):
         with self._lock:
@@ -160,13 +159,22 @@ class GreeterService:
                 "state_age_sec": round(time.time() - self._state_entered_at, 2),
                 "zones": self._zones_safe(),
                 "speech_enabled": sr is not None,
+                "angles": {
+                    "front_deg": self.FRONT_CENTER_DEG,
+                    "left_deg": self.LEFT_CENTER_DEG,
+                    "right_deg": self.RIGHT_CENTER_DEG,
+                },
+                "t_seen_count": self.t_far_seen_count,
+                "drive_tuning": {
+                    "base_speed": self.wall_follow_base_speed,
+                    "turn_speed": self.turn_speed,
+                    "max_steer": self.max_steer,
+                    "turn_45_sec": self.turn_45_sec,
+                    "final_move_sec": self.final_move_sec,
+                },
             }
 
     def set_test_destination(self, destination_text):
-        """
-        Optional typed fallback/testing helper.
-        Does not replace speech for full credit, but useful during debugging.
-        """
         text = str(destination_text or "").lower().strip()
 
         if "bath" in text or "restroom" in text:
@@ -180,7 +188,11 @@ class GreeterService:
             self._destination = dest
             self._last_heard = text
 
-            if self._state == GreeterState.LISTENING:
+            if self._state in (
+                GreeterState.WAITING,
+                GreeterState.GREETING,
+                GreeterState.LISTENING,
+            ):
                 self._state = GreeterState.TURNING_AROUND
                 self._state_entered_at = time.time()
 
@@ -190,6 +202,9 @@ class GreeterService:
         with self._lock:
             self._state = state
             self._state_entered_at = time.time()
+
+            if state == GreeterState.MOVING_TO_T:
+                self.t_far_seen_count = 0
 
         print(f"[GREETER] -> {state.value}", flush=True)
 
@@ -203,9 +218,9 @@ class GreeterService:
 
         time.sleep(wait_sec)
 
-    def _zone_min(self, center_deg, half_angle=18.0):
+    def _zone_min(self, center_deg, half_angle):
         try:
-            return self.lidar.get_zone_min(center_deg, half_angle)
+            return self.lidar.get_zone_min(float(center_deg), float(half_angle))
         except Exception as e:
             print("[GREETER LIDAR ERROR]", repr(e), flush=True)
             return None
@@ -229,7 +244,11 @@ class GreeterService:
 
     def _human_detected(self):
         front = self._zones()["front_mm"]
-        return front is not None and 450.0 <= front <= self.human_detect_mm
+        return front is not None and 400.0 <= front <= self.human_detect_mm
+
+    def _front_obstacle(self):
+        front = self._zones()["front_mm"]
+        return front is not None and front <= self.front_obstacle_mm
 
     def _walls_on_both_sides(self):
         z = self._zones()
@@ -239,11 +258,45 @@ class GreeterService:
 
         return left_ok and right_ok
 
-    def _front_obstacle(self):
-        front = self._zones()["front_mm"]
-        return front is not None and front <= self.front_obstacle_mm
+    def _far_t_intersection_seen(self):
+        z = self._zones()
 
-    def _at_t_intersection(self):
+        front = z["front_mm"]
+        left = z["left_mm"]
+        right = z["right_mm"]
+
+        front_ok = (
+            front is not None
+            and abs(front - self.t_far_mm) <= self.t_far_tolerance_mm
+        )
+
+        left_ok = (
+            left is not None
+            and self.t_left_min_mm <= left <= self.t_left_max_mm
+        )
+
+        right_ok = (
+            right is not None
+            and self.t_right_min_mm <= right <= self.t_right_max_mm
+        )
+
+        looks_like_t = front_ok and left_ok and right_ok
+
+        if looks_like_t:
+            self.t_far_seen_count += 1
+        else:
+            self.t_far_seen_count = 0
+
+        print(
+            f"[GREETER FAR T] count={self.t_far_seen_count}/{self.t_far_seen_required} "
+            f"front={front} left={left} right={right} "
+            f"front_ok={front_ok} left_ok={left_ok} right_ok={right_ok}",
+            flush=True,
+        )
+
+        return self.t_far_seen_count >= self.t_far_seen_required
+
+    def _close_t_intersection_seen(self):
         z = self._zones()
 
         front_wall = z["front_mm"] is not None and z["front_mm"] <= 700.0
@@ -260,16 +313,25 @@ class GreeterService:
 
         recognizer = sr.Recognizer()
 
-        with sr.Microphone() as source:
-            print("[GREETER] listening...", flush=True)
-            recognizer.adjust_for_ambient_noise(source, duration=0.6)
-            audio = recognizer.listen(
-                source,
-                timeout=timeout,
-                phrase_time_limit=phrase_time_limit,
-            )
+        try:
+            with sr.Microphone() as source:
+                print("[GREETER] listening...", flush=True)
+                recognizer.adjust_for_ambient_noise(source, duration=0.6)
+                audio = recognizer.listen(
+                    source,
+                    timeout=timeout,
+                    phrase_time_limit=phrase_time_limit,
+                )
 
-        text = recognizer.recognize_google(audio).lower().strip()
+            text = recognizer.recognize_google(audio).lower().strip()
+
+        except sr.WaitTimeoutError:
+            print("[GREETER] listen timeout", flush=True)
+            return None
+
+        except sr.UnknownValueError:
+            print("[GREETER] speech not understood", flush=True)
+            return None
 
         with self._lock:
             self._last_heard = text
@@ -284,28 +346,79 @@ class GreeterService:
 
         return None
 
-    def _drive_for(self, left, right, seconds, stop=True):
+    def _turn_in_place_until(self, left_cmd, right_cmd, done_fn, label):
+        start = time.time()
+
+        while self._is_running():
+            age = time.time() - start
+            z = self._zones()
+
+            print(
+                f"[GREETER TURN] {label} age={age:.2f} "
+                f"front={z['front_mm']} left={z['left_mm']} right={z['right_mm']}",
+                flush=True,
+            )
+
+            if age >= self.turn_min_sec and done_fn(z):
+                print(f"[GREETER TURN] {label} done by sensor", flush=True)
+                break
+
+            if age >= self.turn_timeout_sec:
+                print(f"[GREETER TURN] {label} timeout fallback", flush=True)
+                break
+
+            self.robot.drive(left_cmd, right_cmd)
+            time.sleep(0.08)
+
+        self.robot.stop()
+        time.sleep(0.20)
+
+    def _turn_in_place_for(self, left_cmd, right_cmd, seconds, label):
+        print(f"[GREETER TURN] {label} for {seconds:.2f}s", flush=True)
+
         end = time.time() + float(seconds)
 
         while self._is_running() and time.time() < end:
-            self.robot.drive(left, right)
+            self.robot.drive(left_cmd, right_cmd)
             time.sleep(0.08)
 
-        if stop:
-            self.robot.stop()
-            time.sleep(0.15)
-
-    def _turn_left_90(self):
-        print("[GREETER] turning left 90", flush=True)
-        self._drive_for(-self.turn_speed, self.turn_speed, self.turn_90_sec)
-
-    def _turn_right_90(self):
-        print("[GREETER] turning right 90", flush=True)
-        self._drive_for(self.turn_speed, -self.turn_speed, self.turn_90_sec)
+        self.robot.stop()
+        time.sleep(0.20)
 
     def _turn_around(self):
-        print("[GREETER] turning around 180", flush=True)
-        self._drive_for(self.turn_speed, -self.turn_speed, self.turn_180_sec)
+        def done(z):
+            front_open = z["front_mm"] is None or z["front_mm"] >= self.turn_front_open_mm
+
+            side_wall_visible = (
+                (z["left_mm"] is not None and z["left_mm"] <= self.turn_side_wall_mm)
+                or
+                (z["right_mm"] is not None and z["right_mm"] <= self.turn_side_wall_mm)
+            )
+
+            return front_open and side_wall_visible
+
+        self._turn_in_place_until(
+            self.turn_speed,
+            -self.turn_speed,
+            done,
+            "turn around 180",
+        )
+
+    def _turn_left_45(self):
+        self._turn_in_place_for(
+            -self.turn_speed,
+            self.turn_speed,
+            self.turn_45_sec,
+            "left 45",
+        )
+
+    def _turn_right_45(self):
+        self._turn_in_place_for(
+            self.turn_speed,
+            -self.turn_speed,
+            self.turn_45_sec,
+            "right 45",
+        )
 
     def _centered_hallway_drive(self):
         z = self._zones()
@@ -315,14 +428,12 @@ class GreeterService:
 
         if self._front_obstacle():
             self.robot.stop()
-            print("[GREETER] front obstacle stop", flush=True)
+            print("[GREETER] front obstacle / possible intersection", flush=True)
             return "front obstacle"
 
         steer = 0.0
 
         if left_mm is not None and right_mm is not None:
-            # If right distance is bigger than left, robot is closer to left wall.
-            # Positive steer speeds left side and slows right side, turning right.
             error = right_mm - left_mm
             steer = self._clamp(error * self.wall_follow_kp, -self.max_steer, self.max_steer)
 
@@ -337,12 +448,36 @@ class GreeterService:
         left_cmd = self._clamp(self.wall_follow_base_speed + steer, -1.0, 1.0)
         right_cmd = self._clamp(self.wall_follow_base_speed - steer, -1.0, 1.0)
 
+        print(
+            f"[GREETER DRIVE] left={left_cmd:.2f} right={right_cmd:.2f} "
+            f"front={z['front_mm']} left_mm={left_mm} right_mm={right_mm}",
+            flush=True,
+        )
+
         self.robot.drive(left_cmd, right_cmd)
         return "driving"
+
+    def _drive_straight_final(self):
+        print("[GREETER FINAL] driving straight", flush=True)
+        self.robot.drive(self.wall_follow_base_speed, self.wall_follow_base_speed)
 
     def _is_running(self):
         with self._lock:
             return self._running
+        
+    def _hallway_ready(self):
+        z = self._zones()
+
+        front = z["front_mm"]
+        left = z["left_mm"]
+        right = z["right_mm"]
+
+        front_clear = front is None or front >= 1000.0
+
+        left_ok = left is not None and 900.0 <= left <= 1800.0
+        right_ok = right is not None and 900.0 <= right <= 2400.0
+
+        return front_clear and left_ok and right_ok
 
     def _run(self):
         try:
@@ -377,17 +512,41 @@ class GreeterService:
                     self._turn_around()
                     self._set_state(GreeterState.ALIGNING_TO_HALLWAY)
 
-                elif state == GreeterState.ALIGNING_TO_HALLWAY:
-                    if self._walls_on_both_sides() or age >= self.align_timeout_sec:
+                elif state == GreeterState.MOVING_TO_T:
+                    if not self._hallway_ready():
+                        self._centered_hallway_drive()
+
+                    elif self._far_t_intersection_seen():
                         self.robot.stop()
-                        self._set_state(GreeterState.MOVING_TO_T)
+                        self._set_state(GreeterState.TURNING_TO_DESTINATION)
+
+                    elif self._front_obstacle():
+                        self.robot.stop()
+                        print("[GREETER] obstacle before confirmed T; stopping", flush=True)
+                        self._set_state(GreeterState.STOPPED)
+                        with self._lock:
+                            self._running = False
+
                     else:
                         self._centered_hallway_drive()
 
                 elif state == GreeterState.MOVING_TO_T:
-                    if self._at_t_intersection():
+                    if self._far_t_intersection_seen():
                         self.robot.stop()
                         self._set_state(GreeterState.TURNING_TO_DESTINATION)
+
+                    elif self._close_t_intersection_seen():
+                        self.robot.stop()
+                        self._set_state(GreeterState.TURNING_TO_DESTINATION)
+
+                    elif self._front_obstacle():
+                        self.robot.stop()
+                        print("[GREETER] front obstacle before confirmed T; stopping for safety", flush=True)
+                        self._set_state(GreeterState.STOPPED)
+
+                        with self._lock:
+                            self._running = False
+
                     else:
                         self._centered_hallway_drive()
 
@@ -395,10 +554,13 @@ class GreeterService:
                     with self._lock:
                         dest = self._destination
 
+                    # Based on stuart_map2:
+                    # bathroom path uses right turn command
+                    # robot lab path uses left turn command
                     if dest == Destination.BATHROOM:
-                        self._turn_right_90()
+                        self._turn_right_45()
                     else:
-                        self._turn_left_90()
+                        self._turn_left_45()
 
                     self._set_state(GreeterState.FINAL_MOVEMENT)
 
@@ -406,7 +568,11 @@ class GreeterService:
                     end = time.time() + self.final_move_sec
 
                     while self._is_running() and time.time() < end:
-                        self._centered_hallway_drive()
+                        if self._front_obstacle():
+                            print("[GREETER] final movement stopped early: front obstacle", flush=True)
+                            break
+
+                        self._drive_straight_final()
                         time.sleep(1.0 / self.loop_hz)
 
                     self.robot.stop()

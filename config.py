@@ -115,7 +115,7 @@ WALL_FOLLOW_SEARCH_TURN = 0.35
 WALL_FOLLOW_CORNER_OPEN_MM = 400.0
 
 # Turn strength used during corner behavior if the service uses this variable.
-WALL_FOLLOW_CORNER_TURN = 0.40
+WALL_FOLLOW_CORNER_TURN = 0.50
 
 # Distance where the front-side wall is considered too close during corner behavior.
 WALL_FOLLOW_CORNER_CLOSE_MM = 0.0
@@ -216,33 +216,69 @@ WALL_FOLLOW_OBSTACLE_PIVOT_POWER = 0.75
 # Final Project Greeter FSM
 # -------------------------------------------------
 
-# Person detection distance in front of robot.
 GREETER_HUMAN_DETECT_MM = 1400.0
 
-# Front stop distance during autonomous movement.
+# Stop distance during autonomous movement.
 GREETER_FRONT_OBSTACLE_MM = 650.0
 
-# Side wall is considered visible if closer than this.
-GREETER_WALL_VISIBLE_MM = 1600.0
-
-# Side is considered open if farther than this.
+GREETER_WALL_VISIBLE_MM = 1700.0
 GREETER_OPENING_MM = 1800.0
 
-# Timed turn values. Tune these on floor.
-GREETER_TURN_180_SEC = 2.25
-GREETER_TURN_90_SEC = 1.12
+# Final straight movement after destination turn.
+GREETER_FINAL_FORWARD_SEC = 3.0
 
-# Final straight movement after intersection turn.
-GREETER_FINAL_FORWARD_SEC = 5.0
+# Your robot uses negative wheel commands as forward.
+WALL_FOLLOW_FORWARD_SIGN = -1.0
 
-# Driving speed during autonomous movement.
-GREETER_BASE_SPEED = 0.22
+# Stuart needs this much power to move.
+GREETER_BASE_SPEED = 0.80
+GREETER_TURN_SPEED = 0.80
 
-# Turning speed for timed turns.
-GREETER_TURN_SPEED = 0.30
+# Soft correction because Stuart is moving fast.
+GREETER_WALL_FOLLOW_KP = 0.00015
+GREETER_TARGET_SIDE_MM = 1250.0
 
-# Wall-follow proportional gain.
-GREETER_WALL_FOLLOW_KP = 0.00045
+# -------------------------------------------------
+# Greeter LiDAR zones
+# -------------------------------------------------
 
-# Desired side distance target.
-GREETER_TARGET_SIDE_MM = 850.0
+GREETER_FRONT_CENTER_DEG = 0.0
+GREETER_FRONT_HALF_ANGLE_DEG = 20.0
+
+GREETER_LEFT_CENTER_DEG = 225.0
+GREETER_LEFT_HALF_ANGLE_DEG = 25.0
+
+GREETER_RIGHT_CENTER_DEG = 45.0
+GREETER_RIGHT_HALF_ANGLE_DEG = 25.0
+
+# -------------------------------------------------
+# Greeter turn / route tuning
+# -------------------------------------------------
+
+GREETER_TURN_TIMEOUT_SEC = 4.0
+GREETER_TURN_MIN_SEC = 0.35
+
+GREETER_TURN_FRONT_OPEN_MM = 2400.0
+GREETER_TURN_SIDE_WALL_MM = 1700.0
+
+# Calibrated destination turn.
+GREETER_TURN_45_SEC = 0.60
+
+# -------------------------------------------------
+# Greeter mapped T detection
+# Based on stuart_map2.json:
+# T start front ~= 1390-1472
+# left ~= 1305-1352
+# right ~= 1683-2031
+# -------------------------------------------------
+
+GREETER_T_FAR_MM = 1450.0
+GREETER_T_FAR_TOLERANCE_MM = 450.0
+
+GREETER_T_LEFT_MIN_MM = 1000.0
+GREETER_T_LEFT_MAX_MM = 1800.0
+
+GREETER_T_RIGHT_MIN_MM = 1400.0
+GREETER_T_RIGHT_MAX_MM = 3300.0
+
+GREETER_T_FAR_SEEN_REQUIRED = 1

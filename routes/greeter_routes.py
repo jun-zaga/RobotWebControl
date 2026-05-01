@@ -53,5 +53,27 @@ def create_greeter_blueprint():
         destination = data.get("destination", "")
 
         return jsonify(greeter.set_test_destination(destination))
+    
+    @bp.get("/api/greeter/debug_scan")
+    def api_greeter_debug_scan():
+        greeter = current_app.config["services"].get("greeter")
+
+        if greeter is None:
+            return jsonify(ok=False, error="greeter service missing"), 500
+
+        lidar = current_app.config["services"].get("lidar")
+
+        if lidar is None:
+            return jsonify(ok=False, error="lidar service missing"), 500
+
+        angles = [0, 45, 90, 135, 180, 225, 270, 315]
+
+        data = {
+            str(angle): lidar.get_zone_min(float(angle), 15.0)
+            for angle in angles
+        }
+
+        return jsonify(ok=True, scan=data)
 
     return bp
+

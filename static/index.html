@@ -84,6 +84,75 @@
     </section>
 
     <section class="card">
+      <h2>Map Builder</h2>
+
+      <div class="row wrapButtons">
+        <label class="mono">
+          Speed
+          <input id="mapDriveSpeed" type="number" min="0.1" max="1.0" step="0.05" value="0.45">
+        </label>
+      </div>
+
+      <div class="row wrapButtons">
+        <button type="button" id="mapForwardBtn">Forward</button>
+      </div>
+
+      <div class="row wrapButtons">
+        <button type="button" id="mapLeftBtn">Turn Left</button>
+        <button type="button" id="mapStopBtn" class="danger">Stop</button>
+        <button type="button" id="mapRightBtn">Turn Right</button>
+      </div>
+
+      <div class="row wrapButtons">
+        <button type="button" id="mapBackBtn">Backward</button>
+      </div>
+
+      <div class="row wrapButtons">
+        <input id="mapPointLabel" class="textInput" placeholder="label: hallway_center">
+        <input id="mapPointNotes" class="textInput" placeholder="notes: centered, T about 8ft ahead">
+      </div>
+
+      <div class="row wrapButtons">
+        <button type="button" id="mapMarkBtn">Mark Point</button>
+        <button type="button" id="mapSaveBtn">Save Map</button>
+        <button type="button" id="mapClearBtn" class="danger">Clear Points</button>
+        <button type="button" id="mapRefreshBtn">Refresh</button>
+      </div>
+
+      <div class="mono telemetryBox">
+        <strong>Greeter Zones</strong><br>
+        Front: <span id="mapFrontMm">---</span> mm<br>
+        Left: <span id="mapLeftMm">---</span> mm<br>
+        Right: <span id="mapRightMm">---</span> mm
+      </div>
+
+      <details>
+        <summary>8-angle scan</summary>
+        <pre id="mapScan8" class="mono telemetryBox">---</pre>
+      </details>
+
+      <h3>Saved Points</h3>
+      <ul id="mapPointsList" class="mono telemetryBox">
+        <li>No points saved yet.</li>
+      </ul>
+
+      <div class="mono telemetryBox">
+        Points: <span id="mapPointCount">0</span><br>
+        Steps: <span id="mapStepCount">0</span>
+      </div>
+
+      <h3>Recent Movement Steps</h3>
+      <ul id="mapStepsList" class="mono telemetryBox">
+        <li>No movement steps recorded yet.</li>
+      </ul>
+
+      <details>
+        <summary>Raw map status</summary>
+        <pre id="mapRawStatus" class="mono telemetryBox">---</pre>
+      </details>
+    </section>
+
+    <section class="card">
       <h2>Head + Waist</h2>
       <div class="grid2">
         <div class="sliderRow">

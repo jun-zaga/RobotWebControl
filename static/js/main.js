@@ -6,6 +6,7 @@ import { initPoses } from "./poses.js";
 import { initDialog } from "./dialog.js";
 import { initWallFollow } from "./wall_follow.js";
 import { initGreeter } from "./greeter.js";
+import { initMapBuilder } from "./map_builder.js";
 
 initDebugUI();
 initDrive();
@@ -15,3 +16,4 @@ initArms();
 initPoses();
 initDialog();
 initGreeter();
+initMapBuilder();
